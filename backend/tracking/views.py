@@ -1,12 +1,17 @@
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes, authentication_classes
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.db.models import Q
 from datetime import datetime, timedelta
 import json
+import math
+from rest_framework.parsers import MultiPartParser, FormParser
+from django.views.decorators.csrf import csrf_exempt
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 
 from .models import Animal, GPSDevice, LocationData, DeviceCommand, Geofence
 from .serializers import (
@@ -20,12 +25,13 @@ class AnimalViewSet(viewsets.ModelViewSet):
     serializer_class = AnimalSerializer
     permission_classes = [IsAuthenticated]
     queryset = Animal.objects.all()
+    parser_classes = (MultiPartParser, FormParser)
     
     def get_queryset(self):
         return Animal.objects.filter(owner=self.request.user, is_active=True)
     
     def perform_create(self, serializer):
-        serializer.save(owner=self.request.user)
+        serializer.save(owner=self.request.user, is_active=True)
     
     @action(detail=True, methods=['get'])
     def location_history(self, request, pk=None):
@@ -156,6 +162,8 @@ class LocationDataViewSet(viewsets.ReadOnlyModelViewSet):
                 location_data['animal_name'] = device.animal.name
                 location_data['device_id'] = device.device_id
                 location_data['is_online'] = device.is_online
+                location_data['animal_category'] = device.animal.category
+                location_data['animal_id'] = device.animal.id
                 current_locations.append(location_data)
         
         return Response(current_locations)
@@ -184,4 +192,256 @@ class GeofenceViewSet(viewsets.ModelViewSet):
         animal_id = self.request.data.get('animal')
         animal = get_object_or_404(Animal, id=animal_id, owner=self.request.user)
         serializer.save(animal=animal)
+
+
+def calculate_distance(lat1, lon1, lat2, lon2):
+    """
+    Calculate the great circle distance between two points on Earth (in meters)
+    using the Haversine formula
+    """
+    # Convert latitude and longitude from degrees to radians
+    lat1_rad = math.radians(float(lat1))
+    lon1_rad = math.radians(float(lon1))
+    lat2_rad = math.radians(float(lat2))
+    lon2_rad = math.radians(float(lon2))
+    
+    # Haversine formula
+    dlat = lat2_rad - lat1_rad
+    dlon = lon2_rad - lon1_rad
+    
+    a = math.sin(dlat/2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon/2)**2
+    c = 2 * math.asin(math.sqrt(a))
+    
+    # Radius of Earth in meters
+    r = 6371000
+    
+    return c * r
+
+
+def check_geofence_violations(device, latitude, longitude):
+    """
+    Check if the current location violates any active geofences for the animal
+    Returns list of violated geofences
+    """
+    violations = []
+    animal = device.animal
+    
+    # Get all active geofences for this animal
+    geofences = Geofence.objects.filter(animal=animal, is_active=True)
+    
+    for geofence in geofences:
+        # Calculate distance from current location to geofence center
+        distance = calculate_distance(
+            latitude, longitude,
+            geofence.center_latitude, geofence.center_longitude
+        )
+        
+        # If distance exceeds radius, it's a violation
+        if distance > float(geofence.radius):
+            violations.append({
+                'geofence': geofence,
+                'distance': distance,
+                'radius': geofence.radius
+            })
+    
+    return violations
+
+
+def create_geofence_notification(device, geofence, distance):
+    """Create a notification for geofence breach"""
+    try:
+        from notifications.models import Notification
+        
+        animal = device.animal
+        owner = animal.owner
+        
+        notification = Notification.objects.create(
+            user=owner,
+            notification_type='geofence_breach',
+            title=f'Geofence Breach: {animal.name}',
+            message=f'{animal.name} has left the geofence "{geofence.name}". '
+                   f'Current distance: {distance:.2f}m (radius: {geofence.radius}m)',
+            priority='high',
+            animal_id=animal.id,
+            device_id=device.device_id,
+            location_data={
+                'latitude': float(device.locations.first().latitude),
+                'longitude': float(device.locations.first().longitude),
+                'geofence_name': geofence.name,
+                'distance': float(distance)
+            }
+        )
+        return notification
+    except Exception as e:
+        # If notifications app is not available, just log the error
+        print(f"Error creating notification: {e}")
+        return None
+
+
+def broadcast_location_update(device, location_data):
+    """Broadcast location update via WebSocket"""
+    try:
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            async_to_sync(channel_layer.group_send)(
+                'tracking_updates',
+                {
+                    'type': 'location_update',
+                    'device_id': device.device_id,
+                    'latitude': float(location_data.latitude),
+                    'longitude': float(location_data.longitude),
+                    'timestamp': location_data.timestamp.isoformat(),
+                    'speed': float(location_data.speed) if location_data.speed else None,
+                    'heading': float(location_data.heading) if location_data.heading else None,
+                }
+            )
+            # Also send to animal-specific group
+            async_to_sync(channel_layer.group_send)(
+                f'animal_{device.animal.id}',
+                {
+                    'type': 'location_update',
+                    'device_id': device.device_id,
+                    'latitude': float(location_data.latitude),
+                    'longitude': float(location_data.longitude),
+                    'timestamp': location_data.timestamp.isoformat(),
+                }
+            )
+    except Exception as e:
+        # If channels is not configured, just continue
+        print(f"WebSocket broadcast error (this is OK if channels not configured): {e}")
+
+
+@csrf_exempt
+@api_view(['POST'])
+@authentication_classes([])  # Disable authentication (no CSRF check)
+@permission_classes([AllowAny])
+def update_location(request):
+    """
+    Endpoint for GPS devices (Arduino + SIM808) to update their location.
+    Accepts device_id or imei to identify the device.
+    
+    Expected JSON format from SIM808:
+    {
+        "device_id": "GPS001" or "imei": "123456789012345",
+        "latitude": -17.85,
+        "longitude": 31.05,
+        "status": "OK",
+        "battery_level": 85,
+        "altitude": 1500.5,
+        "speed": 0.0,
+        "heading": 180.0,
+        "accuracy": 10.5,
+        "timestamp": "2024-01-15T10:30:00Z"  // Optional
+    }
+    """
+    data = request.data
+    
+    # Get device identifier (device_id or imei)
+    device_id = data.get('device_id')
+    imei = data.get('imei')
+    
+    if not device_id and not imei:
+        return Response(
+            {'error': 'device_id or imei is required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Find the device
+    try:
+        if device_id:
+            device = GPSDevice.objects.get(device_id=device_id)
+        else:
+            device = GPSDevice.objects.get(imei=imei)
+    except GPSDevice.DoesNotExist:
+        return Response(
+            {'error': 'GPS device not found. Please register the device first.'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    # Get location data
+    latitude = data.get('latitude')
+    longitude = data.get('longitude')
+    
+    if latitude is None or longitude is None:
+        return Response(
+            {'error': 'latitude and longitude are required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Parse timestamp (use current time if not provided)
+    timestamp_str = data.get('timestamp')
+    if timestamp_str:
+        try:
+            timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+            if timezone.is_naive(timestamp):
+                timestamp = timezone.make_aware(timestamp)
+        except (ValueError, AttributeError):
+            timestamp = timezone.now()
+    else:
+        timestamp = timezone.now()
+    
+    # Create location data
+    location_data = LocationData.objects.create(
+        device=device,
+        latitude=latitude,
+        longitude=longitude,
+        altitude=data.get('altitude'),
+        speed=data.get('speed'),
+        heading=data.get('heading'),
+        accuracy=data.get('accuracy'),
+        timestamp=timestamp
+    )
+    
+    # Update device status
+    device.last_seen = timezone.now()
+    device.status = 'online'
+    
+    # Update status if provided
+    status_value = data.get('status', '').upper()
+    if status_value in ['OK', 'ONLINE']:
+        device.status = 'online'
+    elif status_value in ['LOW_BATTERY', 'LOW']:
+        device.status = 'low_battery'
+    elif status_value in ['ERROR', 'OFFLINE']:
+        device.status = 'offline'
+    
+    # Update battery level if provided
+    if 'battery_level' in data:
+        battery_level = int(data.get('battery_level'))
+        device.battery_level = battery_level
+        # Check for low battery
+        if battery_level < 20:
+            device.status = 'low_battery'
+    
+    device.save()
+    
+    # Check geofence violations
+    geofence_violations = check_geofence_violations(device, latitude, longitude)
+    violation_messages = []
+    
+    for violation in geofence_violations:
+        geofence = violation['geofence']
+        distance = violation['distance']
+        # Create notification for each violation
+        create_geofence_notification(device, geofence, distance)
+        violation_messages.append(
+            f"{geofence.name}: {distance:.2f}m outside (radius: {geofence.radius}m)"
+        )
+    
+    # Broadcast location update via WebSocket
+    broadcast_location_update(device, location_data)
+    
+    serializer = LocationDataSerializer(location_data)
+    response_data = {
+        'message': 'Location updated successfully',
+        'location': serializer.data,
+        'device_status': device.status,
+        'battery_level': device.battery_level
+    }
+    
+    if violation_messages:
+        response_data['geofence_violations'] = violation_messages
+        response_data['warning'] = 'Geofence breach detected!'
+    
+    return Response(response_data, status=status.HTTP_201_CREATED)
 

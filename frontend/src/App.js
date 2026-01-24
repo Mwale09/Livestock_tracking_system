@@ -16,6 +16,7 @@ import Login from './pages/Login';
 // Context
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { SocketProvider } from './contexts/SocketContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 
 // Services
 import { api } from './services/api';
@@ -28,14 +29,10 @@ function AppContent() {
 
   useEffect(() => {
     console.log('AppContent - User state changed:', { user, loading });
-    // WebSocket connection will be handled by Django Channels
-    setSocketConnected(true); // For now, assume connected
+    setSocketConnected(true);
   }, [user, loading]);
 
-  console.log('AppContent render - User:', user, 'Loading:', loading);
-
   if (loading) {
-    console.log('AppContent - Showing loading spinner');
     return (
       <div className="d-flex justify-content-center align-items-center" style={{ height: '100vh' }}>
         <div className="spinner"></div>
@@ -44,39 +41,48 @@ function AppContent() {
   }
 
   if (!user) {
-    console.log('AppContent - Showing login page');
-    return <Login />;
+    return (
+      <div className="App">
+        <main>
+          <Routes>
+            <Route path="/*" element={<Login />} />
+          </Routes>
+        </main>
+        <Toaster position="top-right" />
+      </div>
+    );
   }
 
-  console.log('AppContent - Showing main app for user:', user.username);
   return (
     <SocketProvider value={null}>
-      <Router>
-        <div className="App">
-          <Navbar socketConnected={socketConnected} />
-          <main style={{ paddingTop: '80px' }}>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/animals" element={<Animals />} />
-              <Route path="/animals/:id" element={<AnimalDetail />} />
-              <Route path="/map" element={<Map />} />
-              <Route path="/notifications" element={<Notifications />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </main>
-          <Toaster position="top-right" />
-        </div>
-      </Router>
+      <div className="App">
+        <Navbar socketConnected={socketConnected} />
+        <main style={{ paddingTop: '80px' }}>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/animals" element={<Animals />} />
+            <Route path="/animals/:id" element={<AnimalDetail />} />
+            <Route path="/map" element={<Map />} />
+            <Route path="/notifications" element={<Notifications />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </main>
+        <Toaster position="top-right" />
+      </div>
     </SocketProvider>
   );
 }
 
 function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <Router>
+      <ThemeProvider>
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
+      </ThemeProvider>
+    </Router>
   );
 }
 

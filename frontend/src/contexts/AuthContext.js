@@ -47,9 +47,17 @@ export const AuthProvider = ({ children }) => {
       return { success: true };
     } catch (error) {
       console.error('Login error:', error);
+      const data = error.response?.data;
+      let message = data?.message || data?.detail || error.message || 'Login failed';
+      if (!data?.message && typeof data === 'object' && data) {
+        const firstKey = Object.keys(data)[0];
+        if (firstKey && Array.isArray(data[firstKey]) && data[firstKey][0]) {
+          message = data[firstKey][0];
+        }
+      }
       return { 
         success: false, 
-        error: error.response?.data?.message || error.message || 'Login failed' 
+        error: message
       };
     }
   };

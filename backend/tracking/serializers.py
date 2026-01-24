@@ -10,10 +10,10 @@ class AnimalSerializer(serializers.ModelSerializer):
         model = Animal
         fields = [
             'id', 'name', 'breed', 'gender', 'birth_date', 'weight', 
-            'color', 'owner', 'created_at', 'updated_at', 'is_active',
+            'color', 'category', 'image', 'owner', 'created_at', 'updated_at', 'is_active',
             'gps_device', 'last_location'
         ]
-        read_only_fields = ['owner', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'owner', 'created_at', 'updated_at']
     
     def get_gps_device(self, obj):
         try:

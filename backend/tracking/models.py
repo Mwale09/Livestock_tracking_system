@@ -19,6 +19,14 @@ class Animal(models.Model):
         ('female', 'Female'),
     ]
     
+    CATEGORY_CHOICES = [
+        ('cow', 'Cow'),
+        ('donkey', 'Donkey'),
+        ('pig', 'Pig'),
+        ('sheep', 'Sheep'),
+        ('goat', 'Goat'),
+    ]
+    
     id = models.CharField(max_length=50, primary_key=True, help_text="Unique animal ID")
     name = models.CharField(max_length=100)
     breed = models.CharField(max_length=20, choices=BREED_CHOICES)
@@ -26,6 +34,8 @@ class Animal(models.Model):
     birth_date = models.DateField()
     weight = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
     color = models.CharField(max_length=50, blank=True)
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='cow')
+    image = models.ImageField(upload_to='animal_images/', null=True, blank=True)
     owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='animals')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

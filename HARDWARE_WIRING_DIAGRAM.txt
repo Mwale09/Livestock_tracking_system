@@ -1,0 +1,312 @@
+================================================================================
+                    LIVESTOCK GPS TRACKER - WIRING DIAGRAM
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                                                                         │
+│                         COMPONENT LAYOUT                                │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+
+     ┌──────────────────┐
+     │   ARDUINO UNO    │
+     │                  │
+     │  ┌──────────┐    │         ┌──────────────────┐
+     │  │   USB    │    │         │    SIM808        │
+     │  └──────────┘    │         │   GPS+GSM        │
+     │                  │         │    Module        │
+     │   ●●●●●●●●●●●●   │         │                  │
+     │   ●●●●●●●●●●●●   │         │  [GPS ANT] 📡    │
+     │                  │         │  [GSM ANT] 📡    │
+     │  DIGITAL PINS    │         │                  │
+     │  4 5 6 7 8 9     │         │  TX RX VCC GND   │
+     │  ● ● ● ● ● ●     │         │  ●  ●  ●   ●     │
+     │                  │         │                  │
+     │  5V  GND         │         │  PWR STATUS      │
+     │  ●   ●           │         │  ●   ●           │
+     └──────────────────┘         └──────────────────┘
+             │                              │
+             │                              │
+             │    ┌──────────────┐          │
+             │    │  BREADBOARD  │          │
+             └────┤   POWER      │──────────┘
+                  │   RAILS      │
+                  │              │
+                  │  + + + + +   │
+                  │  - - - - -   │    ┌─────────┐
+                  │              │    │ BUZZER  │
+                  └──────────────┘    │   ♪     │
+                                      │  + -    │
+                                      │  ● ●    │
+                                      └─────────┘
+
+
+================================================================================
+                        DETAILED WIRING CONNECTIONS
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ CONNECTION 1: ARDUINO to SIM808 (Serial Communication)                 │
+└─────────────────────────────────────────────────────────────────────────┘
+
+    Arduino Pin 7  ────────────► SIM808 TX
+    Arduino Pin 8  ────────────► SIM808 RX
+    Arduino Pin 4  ────────────► SIM808 PWR_KEY
+
+    Note: Pin 7 and 8 are SoftwareSerial for GPS/GSM communication
+          Pin 4 is used to power on/off the SIM808 module
+
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ CONNECTION 2: POWER SUPPLY (LAPTOP TESTING SETUP)                      │
+└─────────────────────────────────────────────────────────────────────────┘
+
+    FOR TESTING WITH LAPTOP:
+    
+    Laptop USB Cable       ────────────► Arduino USB Port (this powers Arduino!)
+    
+    Phone Charger 5V 2A:
+    - Red Wire (+5V)       ────────────► SIM808 VCC
+    - Black Wire (GND)     ────────────► Breadboard GND Rail
+    
+    Arduino GND            ────────────► Breadboard GND Rail
+    SIM808 GND             ────────────► Breadboard GND Rail
+
+    ⚠️  IMPORTANT: 
+    - Arduino gets power from laptop USB (easy!)
+    - SIM808 requires 2A current - use old phone charger (5V 2A)
+    - Cut a USB cable or use USB breakout board to get 5V and GND
+    - ALL grounds MUST connect together (common ground)
+
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ CONNECTION 3: BUZZER                                                    │
+└─────────────────────────────────────────────────────────────────────────┘
+
+    Arduino Pin 9  ────[220Ω]────► Buzzer Positive (+)
+    Arduino GND    ────────────────► Buzzer Negative (-)
+
+    Note: 220Ω resistor protects the buzzer and Arduino pin
+
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ CONNECTION 4: ANTENNAS & SIM CARD                                       │
+└─────────────────────────────────────────────────────────────────────────┘
+
+    GPS Antenna    ───► SIM808 GPS Connector (small connector)
+    GSM Antenna    ───► SIM808 GSM Connector (larger connector)
+    SIM Card       ───► Insert in SIM808 SIM card slot
+                        (with PIN lock disabled)
+
+
+================================================================================
+                           COMPLETE WIRING TABLE
+================================================================================
+
+┌──────────────┬─────────────────┬─────────────────────────────────────────┐
+│  ARDUINO     │  CONNECTS TO    │  NOTES                                  │
+├──────────────┼─────────────────┼─────────────────────────────────────────┤
+│  Pin 4       │  SIM808 PWR_KEY │  Power control for SIM808               │
+│  Pin 7       │  SIM808 TX      │  Receive data from SIM808               │
+│  Pin 8       │  SIM808 RX      │  Send data to SIM808                    │
+│  Pin 9       │  Buzzer (+)     │  Via 220Ω resistor                      │
+│  GND         │  Breadboard GND │  Common ground rail                     │
+│  5V          │  (Not used)     │  Arduino 5V not strong enough for SIM808│
+└──────────────┴─────────────────┴─────────────────────────────────────────┘
+
+┌──────────────┬─────────────────┬─────────────────────────────────────────┐
+│  SIM808      │  CONNECTS TO    │  NOTES                                  │
+├──────────────┼─────────────────┼─────────────────────────────────────────┤
+│  TX          │  Arduino Pin 7  │  Transmit data to Arduino               │
+│  RX          │  Arduino Pin 8  │  Receive data from Arduino              │
+│  PWR_KEY     │  Arduino Pin 4  │  Power control signal                   │
+│  VCC         │  External 5V 2A │  MUST be 2A capable!                    │
+│  GND         │  Breadboard GND │  Common ground                          │
+│  GPS ANT     │  GPS Antenna    │  For satellite signals                  │
+│  GSM ANT     │  GSM Antenna    │  For cellular network                   │
+│  SIM Slot    │  Econet SIM     │  Data & SMS capability                  │
+└──────────────┴─────────────────┴─────────────────────────────────────────┘
+
+┌──────────────┬─────────────────┬─────────────────────────────────────────┐
+│  BUZZER      │  CONNECTS TO    │  NOTES                                  │
+├──────────────┼─────────────────┼─────────────────────────────────────────┤
+│  Positive (+)│  Arduino Pin 9  │  Via 220Ω resistor                      │
+│  Negative (-)│  Breadboard GND │  Common ground                          │
+└──────────────┴─────────────────┴─────────────────────────────────────────┘
+
+
+================================================================================
+                            POWER REQUIREMENTS
+================================================================================
+
+Component         Voltage    Current (Typical)    Current (Peak)
+─────────────────────────────────────────────────────────────────────────
+Arduino Uno       7-12V DC   ~50mA               ~200mA
+SIM808 Module     4.8-5.2V   ~100mA (idle)       ~2A (transmitting)
+GPS (on SIM808)   Internal   ~30mA               ~30mA
+GSM (on SIM808)   Internal   ~100mA (idle)       ~2A (transmitting)
+Buzzer            5V         ~30mA               ~30mA
+─────────────────────────────────────────────────────────────────────────
+TOTAL REQUIRED    5V 2A minimum (for SIM808) + 7-12V for Arduino
+
+
+POWER SUPPLY OPTIONS:
+
+✅ RECOMMENDED FOR BEGINNERS - Option 1: Laptop Testing (What You'll Use!)
+  - Arduino: USB cable from laptop (programming + power) ← EASIEST!
+  - SIM808: Old phone charger (5V 2A)
+    * Cut open a USB cable, or
+    * Use a USB breakout board (available at electronics shops)
+    * Red wire = +5V → SIM808 VCC
+    * Black wire = GND → Common ground
+  
+Option 2: Field Deployment (Single Battery) - Later, after testing works
+  - 12V Battery (car battery or 3S LiPo)
+  - Arduino powered via barrel jack (7-12V)
+  - 5V 2A Buck Converter for SIM808 (12V → 5V)
+  
+Option 3: Portable Testing
+  - Arduino: 9V battery or USB power bank
+  - SIM808: Separate 5V 2A power bank
+
+
+================================================================================
+                            ASSEMBLY STEPS
+================================================================================
+
+STEP 1: PREPARE BREADBOARD
+  [ ] Set up power rails on breadboard
+  [ ] Connect all grounds to negative rail
+
+STEP 2: MOUNT SIM808
+  [ ] Place SIM808 on breadboard or separate mount
+  [ ] Insert SIM card (PIN lock disabled)
+  [ ] Connect GPS antenna
+  [ ] Connect GSM antenna
+
+STEP 3: WIRE ARDUINO TO SIM808
+  [ ] Pin 4 → PWR_KEY
+  [ ] Pin 7 → TX
+  [ ] Pin 8 → RX
+  [ ] Arduino GND → Ground rail
+
+STEP 4: WIRE POWER
+  [ ] External 5V 2A → SIM808 VCC
+  [ ] External GND → Ground rail
+  [ ] Verify all grounds connected
+
+STEP 5: WIRE BUZZER
+  [ ] Pin 9 → 220Ω Resistor → Buzzer (+)
+  [ ] Buzzer (-) → Ground rail
+
+STEP 6: VERIFY CONNECTIONS
+  [ ] Double-check all wiring
+  [ ] Ensure no shorts
+  [ ] Verify polarity
+  [ ] Check antenna connections
+
+STEP 7: POWER ON TEST
+  [ ] Connect Arduino USB (for programming)
+  [ ] Apply 5V 2A to SIM808
+  [ ] Check for SIM808 status LED
+  [ ] Look for blinking GPS LED
+
+
+================================================================================
+                        TROUBLESHOOTING GUIDE
+================================================================================
+
+PROBLEM: SIM808 not responding to AT commands
+CHECK:
+  ✓ Is SIM808 powered on? (Status LED should be on)
+  ✓ Are TX/RX connections correct? (TX→RX, RX→TX)
+  ✓ Is baud rate 9600 in both code and Serial Monitor?
+  ✓ Is power supply providing adequate current?
+
+PROBLEM: GPS not getting fix
+CHECK:
+  ✓ Is GPS antenna connected?
+  ✓ Does antenna have clear view of sky?
+  ✓ Wait 2-5 minutes for cold start
+  ✓ Is GPS powered on? (Blue LED should blink)
+
+PROBLEM: No network registration
+CHECK:
+  ✓ Is SIM card inserted correctly?
+  ✓ Is PIN lock disabled on SIM?
+  ✓ Does SIM have service? (Test in phone)
+  ✓ Is GSM antenna connected?
+  ✓ Check signal strength (AT+CSQ should be >10)
+
+PROBLEM: Arduino keeps resetting
+CHECK:
+  ✓ SIM808 current draw may be too high
+  ✓ Use separate power supply for SIM808
+  ✓ Ensure common ground between all components
+  ✓ Add capacitor (100µF) across SIM808 power
+
+PROBLEM: Buzzer not working
+CHECK:
+  ✓ Buzzer polarity (+ and -)
+  ✓ Pin 9 connection
+  ✓ Resistor in series (220Ω)
+  ✓ Test with simple tone sketch first
+
+
+================================================================================
+                        SAFETY CONSIDERATIONS
+================================================================================
+
+⚠️  ELECTRICAL SAFETY:
+   - Do not exceed voltage ratings
+   - Ensure proper polarity on all connections
+   - Use adequate current-rated power supplies
+   - Add fuses where appropriate for field deployment
+
+⚠️  ANTENNA SAFETY:
+   - Do not operate GSM without antenna (can damage module)
+   - Keep antennas away from metal objects
+   - Ensure antennas are properly connected before power on
+
+⚠️  DEPLOYMENT SAFETY:
+   - Use weatherproof enclosure for outdoor use
+   - Protect from moisture and dust (IP65+ recommended)
+   - Secure all connections to prevent vibration damage
+   - Provide strain relief for cables
+   - Consider temperature range of deployment environment
+
+
+================================================================================
+                          FINAL CHECKLIST
+================================================================================
+
+BEFORE POWERING ON:
+  [ ] All wiring connections secure
+  [ ] No short circuits visible
+  [ ] Power supply polarity correct
+  [ ] All grounds connected (common ground)
+  [ ] Antennas connected
+  [ ] SIM card inserted
+  [ ] Code uploaded to Arduino
+
+AFTER POWERING ON:
+  [ ] SIM808 status LED on
+  [ ] GPS LED blinking (searching)
+  [ ] Serial Monitor showing initialization
+  [ ] No smoke or burning smell
+  [ ] No excessive heating
+
+READY FOR TESTING:
+  [ ] Basic test sketch runs successfully
+  [ ] GPS gets fix within 5 minutes
+  [ ] Network registration successful
+  [ ] Can send/receive SMS
+  [ ] Server communication works
+  [ ] Buzzer activates on command
+
+
+================================================================================
+                    Document Version: 1.0
+                    Last Updated: January 24, 2026
+                    Project: Livestock GPS Tracker
+================================================================================

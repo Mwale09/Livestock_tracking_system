@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Bell, MapPin, Home, Users, Settings, LogOut, Wifi, WifiOff } from 'lucide-react';
+import { Bell, MapPin, Home, CircleDot, Settings, LogOut, Wifi, WifiOff } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
+import { useTheme } from '../contexts/ThemeContext';
+import { Moon, Sun } from 'lucide-react';
 
 const Navbar = ({ socketConnected }) => {
   const { user, logout } = useAuth();
   const { lastLocationUpdate } = useSocket();
+  const { theme, toggleTheme } = useTheme();
   const location = useLocation();
   const [showNotifications, setShowNotifications] = useState(false);
 
@@ -16,7 +19,7 @@ const Navbar = ({ socketConnected }) => {
 
   const navItems = [
     { path: '/', icon: Home, label: 'Dashboard' },
-    { path: '/animals', icon: Users, label: 'Animals' },
+    { path: '/animals', icon: CircleDot, label: 'Livestock' },
     { path: '/map', icon: MapPin, label: 'Map' },
     { path: '/notifications', icon: Bell, label: 'Notifications' },
     { path: '/settings', icon: Settings, label: 'Settings' },
@@ -79,6 +82,15 @@ const Navbar = ({ socketConnected }) => {
         })}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button
+            onClick={toggleTheme}
+            className="btn btn-sm"
+            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+          >
+            {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
+            {theme === 'light' ? 'Dark' : 'Light'}
+          </button>
           <span style={{ fontSize: '14px', color: '#6c757d' }}>
             Welcome, {user?.username || 'User'}
           </span>

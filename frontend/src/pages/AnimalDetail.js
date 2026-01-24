@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, MapPin, Bell, MessageSquare, Wifi, WifiOff, Battery, Clock, Activity, Calendar } from 'lucide-react';
 import { animalsAPI } from '../services/api';
+import { useTheme } from '../contexts/ThemeContext';
 import toast from 'react-hot-toast';
 
 const AnimalDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { theme } = useTheme();
   const [animal, setAnimal] = useState(null);
   const [locationHistory, setLocationHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -123,6 +125,14 @@ const AnimalDetail = () => {
   const isOnline = animal.gps_device?.is_online || false;
   const batteryLevel = animal.gps_device?.battery_level || 0;
   const lastLocation = animal.last_location;
+  const rawImage = animal.image;
+  const photoUrl = rawImage
+    ? (rawImage.startsWith('http')
+        ? rawImage
+        : rawImage.startsWith('/')
+          ? `${process.env.REACT_APP_API_URL || 'http://localhost:8000'}${rawImage}`
+          : `${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/media/${rawImage}`)
+    : null;
 
   return (
     <div className="container" style={{ padding: '20px' }}>
@@ -145,6 +155,18 @@ const AnimalDetail = () => {
         <div className="card">
           <div className="card-header">
             <h3 className="card-title">Animal Information</h3>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '20px' }}>
+            {photoUrl ? (
+              <img src={photoUrl} alt={animal.name} style={{ width: '80px', height: '80px', borderRadius: '50%', objectFit: 'cover' }} />
+            ) : (
+              <div style={{ width: '80px', height: '80px', backgroundColor: '#e9ecef', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <MapPin size={40} color="#6c757d" />
+              </div>
+            )}
+            <div>
+              <div style={{ fontWeight: 600, fontSize: '1.15rem' }}>{animal.category}</div>
+            </div>
           </div>
           <div style={{ display: 'grid', gap: '15px' }}>
             <div>
@@ -219,18 +241,18 @@ const AnimalDetail = () => {
           )}
         </div>
 
-        {/* Current Location */}
+        {/* Current Location / Last Seen */}
         {lastLocation && (
           <div className="card">
             <div className="card-header">
-              <h3 className="card-title">Current Location</h3>
+              <h3 className="card-title">{isOnline ? 'Current Location' : 'Last Seen'}</h3>
             </div>
             <div style={{ display: 'grid', gap: '15px' }}>
               <div>
-                <strong>Latitude:</strong> {lastLocation.latitude.toFixed(6)}
+                <strong>Latitude:</strong> {parseFloat(lastLocation.latitude || 0).toFixed(6)}
               </div>
               <div>
-                <strong>Longitude:</strong> {lastLocation.longitude.toFixed(6)}
+                <strong>Longitude:</strong> {parseFloat(lastLocation.longitude || 0).toFixed(6)}
               </div>
               <div>
                 <strong>Speed:</strong> {lastLocation.speed ? `${lastLocation.speed} km/h` : 'Unknown'}
@@ -239,7 +261,7 @@ const AnimalDetail = () => {
                 <strong>Heading:</strong> {lastLocation.heading ? `${lastLocation.heading}°` : 'Unknown'}
               </div>
               <div>
-                <strong>Last Update:</strong> {formatDateTime(lastLocation.timestamp)}
+                <strong>{isOnline ? 'Last Update' : 'Last Seen'}:</strong> {formatDateTime(lastLocation.timestamp)}
               </div>
             </div>
           </div>
@@ -327,28 +349,28 @@ const AnimalDetail = () => {
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     padding: '15px',
-                    border: '1px solid #e9ecef',
+                    border: `1px solid ${theme === 'dark' ? '#1b2330' : '#e9ecef'}`,
                     borderRadius: '8px',
-                    backgroundColor: '#f8f9fa'
+                    backgroundColor: theme === 'dark' ? '#0b1118' : '#f8f9fa'
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                     <div style={{
                       width: '40px',
                       height: '40px',
-                      backgroundColor: '#e9ecef',
+                      backgroundColor: theme === 'dark' ? '#1b2330' : '#e9ecef',
                       borderRadius: '50%',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center'
                     }}>
-                      <MapPin size={20} color="#6c757d" />
+                      <MapPin size={20} color={theme === 'dark' ? '#22d3ee' : '#6c757d'} />
                     </div>
                     <div>
-                      <div style={{ fontWeight: '500' }}>
-                        {location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}
+                      <div style={{ fontWeight: '500', color: theme === 'dark' ? '#e6f1ff' : '#000' }}>
+                        {parseFloat(location.latitude || 0).toFixed(6)}, {parseFloat(location.longitude || 0).toFixed(6)}
                       </div>
-                      <div style={{ fontSize: '14px', color: '#6c757d' }}>
+                      <div style={{ fontSize: '14px', color: theme === 'dark' ? '#94a3b8' : '#6c757d' }}>
                         {formatDateTime(location.timestamp)}
                       </div>
                     </div>
@@ -356,13 +378,13 @@ const AnimalDetail = () => {
                   
                   <div className="text-right">
                     {location.speed && (
-                      <div style={{ fontSize: '14px' }}>
-                        <strong>Speed:</strong> {location.speed} km/h
+                      <div style={{ fontSize: '14px', color: theme === 'dark' ? '#cbd5e1' : '#000' }}>
+                        <strong style={{ color: theme === 'dark' ? '#22d3ee' : '#000' }}>Speed:</strong> {location.speed} km/h
                       </div>
                     )}
                     {location.heading && (
-                      <div style={{ fontSize: '14px' }}>
-                        <strong>Heading:</strong> {location.heading}°
+                      <div style={{ fontSize: '14px', color: theme === 'dark' ? '#cbd5e1' : '#000' }}>
+                        <strong style={{ color: theme === 'dark' ? '#22d3ee' : '#000' }}>Heading:</strong> {location.heading}°
                       </div>
                     )}
                   </div>

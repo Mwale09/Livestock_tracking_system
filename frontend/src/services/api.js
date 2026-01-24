@@ -36,8 +36,11 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      // Redirect to login on authentication error
+    const status = error.response?.status;
+    const url = error.config?.url || '';
+    const onLoginPage = window.location.pathname.startsWith('/login');
+    const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/user');
+    if (status === 401 && !isAuthEndpoint && !onLoginPage) {
       window.location.href = '/login';
     }
     return Promise.reject(error);
@@ -48,8 +51,9 @@ api.interceptors.response.use(
 export const animalsAPI = {
   getAll: () => api.get('/tracking/animals/'),
   getById: (id) => api.get(`/tracking/animals/${id}/`),
-  create: (data) => api.post('/tracking/animals/', data),
-  update: (id, data) => api.put(`/tracking/animals/${id}/`, data),
+  create: (data, config) => api.post('/tracking/animals/', data, config),
+  update: (id, data, config) => api.put(`/tracking/animals/${id}/`, data, config),
+  updatePartial: (id, data, config) => api.patch(`/tracking/animals/${id}/`, data, config),
   delete: (id) => api.delete(`/tracking/animals/${id}/`),
   getLocationHistory: (id, params) => api.get(`/tracking/animals/${id}/location_history/`, { params }),
   activateBuzzer: (id) => api.post(`/tracking/animals/${id}/activate_buzzer/`),

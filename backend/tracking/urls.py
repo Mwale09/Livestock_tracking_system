@@ -11,6 +11,7 @@ router.register(r'geofences', views.GeofenceViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('update_location/', views.update_location, name='update_location'),
 ]
 
 
