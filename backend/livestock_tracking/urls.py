@@ -8,9 +8,9 @@ from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/auth/', include('authentication.urls')),
-    path('api/tracking/', include('tracking.urls')),
-    path('api/notifications/', include('notifications.urls')),
+    path('auth/', include('authentication.urls')),
+    path('tracking/', include('tracking.urls')),
+    path('notifications/', include('notifications.urls')),
 ]
 
 if settings.DEBUG:
