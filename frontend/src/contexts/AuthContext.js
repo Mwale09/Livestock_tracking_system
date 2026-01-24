@@ -22,7 +22,7 @@ export const AuthProvider = ({ children }) => {
   const checkAuthStatus = async () => {
     console.log('Checking auth status...');
     try {
-      const response = await api.get('/auth/user/');
+      const response = await api.get('/api/auth/user/');
       console.log('Auth check successful:', response.data);
       setUser(response.data);
     } catch (error) {
@@ -39,10 +39,10 @@ export const AuthProvider = ({ children }) => {
   const login = async (credentials) => {
     console.log('Attempting login with:', credentials.username);
     try {
-      const response = await api.post('/auth/login/', credentials);
+      const response = await api.post('/api/auth/login/', credentials);
       console.log('Login response:', response.data);
       const { user } = response.data;
-      
+
       setUser(user);
       return { success: true };
     } catch (error) {
@@ -55,8 +55,8 @@ export const AuthProvider = ({ children }) => {
           message = data[firstKey][0];
         }
       }
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: message
       };
     }
@@ -65,7 +65,7 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     console.log('Attempting logout...');
     try {
-      await api.post('/auth/logout/');
+      await api.post('/api/auth/logout/');
       console.log('Logout successful');
     } catch (error) {
       console.error('Logout error:', error);
@@ -80,15 +80,15 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (userData) => {
     try {
-      const response = await api.post('/auth/register/', userData);
+      const response = await api.post('/api/auth/register/', userData);
       const { user } = response.data;
-      
+
       setUser(user);
       return { success: true };
     } catch (error) {
-      return { 
-        success: false, 
-        error: error.response?.data?.message || 'Registration failed' 
+      return {
+        success: false,
+        error: error.response?.data?.message || 'Registration failed'
       };
     }
   };
