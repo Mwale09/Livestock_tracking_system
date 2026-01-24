@@ -126,18 +126,11 @@ def csrf_token_view(request):
 
 
 @api_view(['GET'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def user_view(request):
     """Get current user information"""
-    if not request.user.is_authenticated:
-        return Response({
-            'authenticated': False,
-            'message': 'Not authenticated'
-        }, status=status.HTTP_200_OK)
-        
     user = request.user
     return Response({
-        'authenticated': True,
         'id': user.id,
         'username': user.username,
         'email': user.email,

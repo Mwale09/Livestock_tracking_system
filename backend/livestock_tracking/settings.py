@@ -173,20 +173,12 @@ SESSION_COOKIE_SECURE = True  # Use HTTPS for cookies on Render
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_AGE = 86400  # 24 hours
 
-# For local development, override these only if NOT on Render
-on_render = os.environ.get('RENDER') or 'onrender.com' in os.environ.get('ALLOWED_HOSTS', '')
-if not on_render and DEBUG:
+# For local development, override these
+if DEBUG and 'localhost' in ALLOWED_HOSTS[0]:
     CSRF_COOKIE_SECURE = False
     SESSION_COOKIE_SECURE = False
     SESSION_COOKIE_SAMESITE = 'Lax'
     CSRF_COOKIE_SAMESITE = 'Lax'
-else:
-    # Defaults for Render or Production
-    CSRF_COOKIE_SECURE = True
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SAMESITE = 'None'
-    SESSION_COOKIE_SAMESITE = 'None'
-    CSRF_COOKIE_HTTPONLY = False  # Important for frontend to read CSRF token if needed
 
 # Channels settings
 CHANNEL_LAYERS = {
