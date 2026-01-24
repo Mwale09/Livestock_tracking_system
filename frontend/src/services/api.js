@@ -39,7 +39,7 @@ api.interceptors.response.use(
     const status = error.response?.status;
     const url = error.config?.url || '';
     const onLoginPage = window.location.pathname.startsWith('/login');
-    const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/user');
+    const isAuthEndpoint = url.includes('/api/auth/login') || url.includes('/api/auth/register') || url.includes('/api/auth/user');
     if (status === 401 && !isAuthEndpoint && !onLoginPage) {
       window.location.href = '/login';
     }
