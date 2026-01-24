@@ -14,7 +14,13 @@ SECRET_KEY = 'django-insecure-change-this-in-production'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0', 'livestock-tracking-system.onrender.com']
+ALLOWED_HOSTS = [
+    'localhost', 
+    '127.0.0.1', 
+    '0.0.0.0', 
+    'livestock-tracking-system.onrender.com',
+    '.onrender.com',  # Allow all Render subdomains
+]
 
 # Application definition
 INSTALLED_APPS = [
@@ -123,10 +129,16 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "https://livestock-tracking-system.onrender.com",
+    # Add your frontend Render URL here when you deploy frontend
 ]
 
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_ALL_ORIGINS = True  # For development only
+CORS_ALLOW_ALL_ORIGINS = True  # Allow all origins (for testing with Render)
+
+# Allow Render domains
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://.*\.onrender\.com$",  # All Render domains
+]
 
 # Additional CORS headers
 CORS_ALLOW_HEADERS = [
@@ -146,18 +158,27 @@ CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "https://livestock-tracking-system.onrender.com",
+    "https://*.onrender.com",  # All Render domains
 ]
 
-# Disable CSRF for API endpoints (for development)
-CSRF_COOKIE_SECURE = False
-CSRF_COOKIE_HTTPONLY = False
-CSRF_COOKIE_SAMESITE = 'Lax'
+# CSRF settings for cross-domain (Render frontend to backend)
+CSRF_COOKIE_SECURE = True  # Use HTTPS for cookies on Render
+CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript to read CSRF token
+CSRF_COOKIE_SAMESITE = 'None'  # Required for cross-domain cookies
+CSRF_USE_SESSIONS = False  # Use cookie-based CSRF instead of session
 
 # Session settings
-SESSION_COOKIE_SAMESITE = 'Lax'
-SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
+SESSION_COOKIE_SAMESITE = 'None'  # Required for cross-domain cookies
+SESSION_COOKIE_SECURE = True  # Use HTTPS for cookies on Render
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_AGE = 86400  # 24 hours
+
+# For local development, override these
+if DEBUG and 'localhost' in ALLOWED_HOSTS[0]:
+    CSRF_COOKIE_SECURE = False
+    SESSION_COOKIE_SECURE = False
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    CSRF_COOKIE_SAMESITE = 'Lax'
 
 # Channels settings
 CHANNEL_LAYERS = {

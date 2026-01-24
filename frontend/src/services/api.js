@@ -17,7 +17,7 @@ api.interceptors.request.use(
     // Get CSRF token for POST/PUT/DELETE requests
     if (['post', 'put', 'delete', 'patch'].includes(config.method?.toLowerCase())) {
       try {
-        const response = await axios.get(`${API_BASE_URL}/auth/csrf-token/`, {
+        const response = await axios.get(`${API_BASE_URL}/api/auth/csrf-token/`, {
           withCredentials: true
         });
         config.headers['X-CSRFToken'] = response.data.csrfToken;
@@ -39,7 +39,7 @@ api.interceptors.response.use(
     const status = error.response?.status;
     const url = error.config?.url || '';
     const onLoginPage = window.location.pathname.startsWith('/login');
-    const isAuthEndpoint = url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/user');
+    const isAuthEndpoint = url.includes('/api/auth/login') || url.includes('/api/auth/register') || url.includes('/api/auth/user');
     if (status === 401 && !isAuthEndpoint && !onLoginPage) {
       window.location.href = '/login';
     }
@@ -49,48 +49,48 @@ api.interceptors.response.use(
 
 // API endpoints
 export const animalsAPI = {
-  getAll: () => api.get('/tracking/animals/'),
-  getById: (id) => api.get(`/tracking/animals/${id}/`),
-  create: (data, config) => api.post('/tracking/animals/', data, config),
-  update: (id, data, config) => api.put(`/tracking/animals/${id}/`, data, config),
-  updatePartial: (id, data, config) => api.patch(`/tracking/animals/${id}/`, data, config),
-  delete: (id) => api.delete(`/tracking/animals/${id}/`),
-  getLocationHistory: (id, params) => api.get(`/tracking/animals/${id}/location_history/`, { params }),
-  activateBuzzer: (id) => api.post(`/tracking/animals/${id}/activate_buzzer/`),
-  requestSMS: (id, data) => api.post(`/tracking/animals/${id}/request_sms/`, data),
+  getAll: () => api.get('/api/tracking/animals/'),
+  getById: (id) => api.get(`/api/tracking/animals/${id}/`),
+  create: (data, config) => api.post('/api/tracking/animals/', data, config),
+  update: (id, data, config) => api.put(`/api/tracking/animals/${id}/`, data, config),
+  updatePartial: (id, data, config) => api.patch(`/api/tracking/animals/${id}/`, data, config),
+  delete: (id) => api.delete(`/api/tracking/animals/${id}/`),
+  getLocationHistory: (id, params) => api.get(`/api/tracking/animals/${id}/location_history/`, { params }),
+  activateBuzzer: (id) => api.post(`/api/tracking/animals/${id}/activate_buzzer/`),
+  requestSMS: (id, data) => api.post(`/api/tracking/animals/${id}/request_sms/`, data),
 };
 
 export const devicesAPI = {
-  getAll: () => api.get('/tracking/devices/'),
-  getById: (id) => api.get(`/tracking/devices/${id}/`),
-  getOnline: () => api.get('/tracking/devices/online_devices/'),
-  getOffline: () => api.get('/tracking/devices/offline_devices/'),
+  getAll: () => api.get('/api/tracking/devices/'),
+  getById: (id) => api.get(`/api/tracking/devices/${id}/`),
+  getOnline: () => api.get('/api/tracking/devices/online_devices/'),
+  getOffline: () => api.get('/api/tracking/devices/offline_devices/'),
 };
 
 export const locationsAPI = {
-  getAll: () => api.get('/tracking/locations/'),
-  getCurrent: () => api.get('/tracking/locations/current_locations/'),
+  getAll: () => api.get('/api/tracking/locations/'),
+  getCurrent: () => api.get('/api/tracking/locations/current_locations/'),
 };
 
 export const notificationsAPI = {
-  getAll: () => api.get('/notifications/notifications/'),
-  getById: (id) => api.get(`/notifications/notifications/${id}/`),
-  markAsRead: (id) => api.post(`/notifications/notifications/${id}/mark_as_read/`),
-  markAllAsRead: () => api.post('/notifications/notifications/mark_all_as_read/'),
-  getUnreadCount: () => api.get('/notifications/notifications/unread_count/'),
-  getStats: () => api.get('/notifications/notifications/stats/'),
+  getAll: () => api.get('/api/notifications/notifications/'),
+  getById: (id) => api.get(`/api/notifications/notifications/${id}/`),
+  markAsRead: (id) => api.post(`/api/notifications/notifications/${id}/mark_as_read/`),
+  markAllAsRead: () => api.post('/api/notifications/notifications/mark_all_as_read/'),
+  getUnreadCount: () => api.get('/api/notifications/notifications/unread_count/'),
+  getStats: () => api.get('/api/notifications/notifications/stats/'),
 };
 
 export const settingsAPI = {
-  get: () => api.get('/notifications/settings/'),
-  update: (data) => api.post('/notifications/settings/', data),
+  get: () => api.get('/api/notifications/settings/'),
+  update: (data) => api.post('/api/notifications/settings/', data),
 };
 
 export const authAPI = {
-  login: (credentials) => api.post('/auth/login/', credentials),
-  logout: () => api.post('/auth/logout/'),
-  register: (userData) => api.post('/auth/register/', userData),
-  getUser: () => api.get('/auth/user/'),
+  login: (credentials) => api.post('/api/auth/login/', credentials),
+  logout: () => api.post('/api/auth/logout/'),
+  register: (userData) => api.post('/api/auth/register/', userData),
+  getUser: () => api.get('/api/auth/user/'),
 };
 
 export { api };
