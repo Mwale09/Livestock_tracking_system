@@ -122,6 +122,7 @@ REST_FRAMEWORK = {
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "https://livestock-tracking-system.onrender.com",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -144,6 +145,7 @@ CORS_ALLOW_HEADERS = [
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "https://livestock-tracking-system.onrender.com",
 ]
 
 # Disable CSRF for API endpoints (for development)
