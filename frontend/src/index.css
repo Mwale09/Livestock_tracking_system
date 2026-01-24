@@ -446,9 +446,7 @@ code {
 :root[data-theme='dark'] .btn-info {
   background-color: #0ea5e9;
   color: #0b1320;
-}
-
-/* Neon accents for icons */
+}/* Neon accents for icons */
 :root[data-theme='dark'] svg.status-online {
   color: #22c55e;
 }:root[data-theme='dark'] svg.status-offline {
