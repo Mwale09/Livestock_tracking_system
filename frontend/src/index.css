@@ -441,9 +441,7 @@ code {
 :root[data-theme='dark'] .btn-warning {
   background-color: #b08900;
   color: #fff;
-}
-
-:root[data-theme='dark'] .btn-info {
+}:root[data-theme='dark'] .btn-info {
   background-color: #0ea5e9;
   color: #0b1320;
 }/* Neon accents for icons */

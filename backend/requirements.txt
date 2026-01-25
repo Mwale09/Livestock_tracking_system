@@ -9,4 +9,8 @@ celery==5.3.1
 redis==4.6.0
 Pillow==10.0.0
 django-filter==23.2
+gunicorn==21.2.0
+dj-database-url==2.1.0
+
+
 
