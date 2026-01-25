@@ -35,7 +35,7 @@ const Dashboard = () => {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      
+
       const [animalsRes, locationsRes, notificationsRes] = await Promise.all([
         animalsAPI.getAll(),
         locationsAPI.getCurrent(),
@@ -68,7 +68,7 @@ const Dashboard = () => {
       setWeather(null);
       // Add this line to see errors in the console
       console.error('Weather error:', err.response ? err.response.data : err.message);
-      alert('Weather error: ' + (err.response ? JSON.stringify(err.response.data) : err.message));
+      // Removed noisy alert
     }
   };
 
@@ -95,7 +95,7 @@ const Dashboard = () => {
     const date = new Date(lastSeen);
     const now = new Date();
     const diffInMinutes = Math.floor((now - date) / (1000 * 60));
-    
+
     if (diffInMinutes < 1) return 'Just now';
     if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
     if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`;
@@ -225,12 +225,12 @@ const Dashboard = () => {
             View All
           </Link>
         </div>
-        
+
         <div style={{ display: 'grid', gap: '15px' }}>
           {animals.slice(0, 5).map((animal) => {
             const location = currentLocations.find(loc => loc.animal_name === animal.name);
             const isOnline = location?.is_online || false;
-            
+
             return (
               <div key={animal.id} className="recent-row" style={{
                 display: 'flex',
@@ -275,7 +275,7 @@ const Dashboard = () => {
                     </p>
                   </div>
                 </div>
-                
+
                 <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                   <div className="text-center">
                     <div className={`d-flex align-items-center gap-2 ${getStatusColor(isOnline)}`}>
@@ -290,7 +290,7 @@ const Dashboard = () => {
                       </p>
                     )}
                   </div>
-                  
+
                   <Link to={`/animals/${animal.id}`} className="btn btn-primary btn-sm">
                     View Details
                   </Link>
@@ -306,7 +306,7 @@ const Dashboard = () => {
         <div className="card-header">
           <h3 className="card-title">Quick Actions</h3>
         </div>
-        
+
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
           <Link to="/map" className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <MapPin size={18} />

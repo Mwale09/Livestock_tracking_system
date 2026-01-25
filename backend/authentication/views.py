@@ -49,13 +49,13 @@ def login_view(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])
 @csrf_exempt
 def logout_view(request):
     """User logout endpoint"""
     logout(request)
-    # Clear the session
-    request.session.flush()
+    if hasattr(request, 'session'):
+        request.session.flush()
     return Response({'message': 'Logout successful'})
 
 
@@ -100,15 +100,7 @@ def register_view(request):
         # No automatic login - user must sign in manually
         
         return Response({
-            'message': 'Registration successful',
-            'user': {
-                'id': user.id,
-                'username': user.username,
-                'email': user.email,
-                'first_name': user.first_name,
-                'last_name': user.last_name,
-            },
-            'token': 'dummy-token'  # In production, use JWT tokens
+            'message': 'Registration successful. Please log in with your new account.',
         })
     except Exception as e:
         return Response(

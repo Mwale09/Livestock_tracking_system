@@ -79,6 +79,11 @@ export const AuthProvider = ({ children }) => {
   };
 
   const register = async (userData) => {
+    // Clear any existing state before registration
+    setUser(null);
+    localStorage.clear();
+    sessionStorage.clear();
+
     try {
       const response = await api.post('/api/auth/register/', userData);
       const { user } = response.data;

@@ -36,7 +36,7 @@ const Animals = () => {
   useEffect(() => {
     try {
       localStorage.setItem('animalsViewMode', viewMode);
-    } catch {}
+    } catch { }
   }, [viewMode]);
 
   const fetchAnimals = async () => {
@@ -65,11 +65,13 @@ const Animals = () => {
     try {
       const formData = new FormData();
       Object.entries(newAnimal).forEach(([key, value]) => {
-        if (value !== null && value !== undefined && value !== '') {
+        if (key === 'id') {
+          formData.append(key, value);
+        } else if (value !== null && value !== undefined && value !== '') {
           formData.append(key, value);
         }
       });
-      await animalsAPI.create(formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      await animalsAPI.create(formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success('Animal added successfully');
       setShowAddForm(false);
       setNewAnimal({
@@ -146,7 +148,7 @@ const Animals = () => {
           formData.append(key, value);
         }
       });
-      await animalsAPI.updatePartial(editingId, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      await animalsAPI.updatePartial(editingId, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       toast.success('Livestock updated');
       setEditingId(null);
       setEditAnimal(null);
@@ -298,25 +300,25 @@ const Animals = () => {
           >
             <MapPin size={16} />
           </button>
-          <Link 
-            to={`/animals/${animal.id}`} 
-            className="btn btn-primary btn-sm" 
+          <Link
+            to={`/animals/${animal.id}`}
+            className="btn btn-primary btn-sm"
             style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px', textDecoration: 'none' }}
             title="View Details"
           >
             <Eye size={16} />
           </Link>
-          <button 
-            className="btn btn-outline-secondary btn-sm" 
-            onClick={() => startEdit(animal)} 
+          <button
+            className="btn btn-outline-secondary btn-sm"
+            onClick={() => startEdit(animal)}
             title="Edit"
             style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px' }}
           >
             <Edit size={16} />
           </button>
-          <button 
-            className="btn btn-outline-danger btn-sm" 
-            onClick={() => deleteAnimal(animal.id)} 
+          <button
+            className="btn btn-outline-danger btn-sm"
+            onClick={() => deleteAnimal(animal.id)}
             title="Delete"
             style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px' }}
           >
@@ -642,177 +644,177 @@ const Animals = () => {
             );
           })
           .map((animal) => {
-          const isOnline = animal.gps_device?.is_online || false;
-          const batteryLevel = animal.gps_device?.battery_level || 0;
-          
-          return (
-            <div key={animal.id} className="card" style={{ height: '100%' }}>
-              {editingId === animal.id ? (
-                <form onSubmit={saveEdit}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Name</label>
-                      <input type="text" name="name" value={editAnimal.name} onChange={handleEditChange} style={{ width: '100%', padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Breed</label>
-                      <select name="breed" value={editAnimal.breed} onChange={handleEditChange} style={{ width: '100%', padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px' }}>
-                        <option value="holstein">Holstein</option>
-                        <option value="angus">Angus</option>
-                        <option value="hereford">Hereford</option>
-                        <option value="jersey">Jersey</option>
-                        <option value="simmental">Simmental</option>
-                        <option value="other">Other</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Gender</label>
-                      <select name="gender" value={editAnimal.gender} onChange={handleEditChange} style={{ width: '100%', padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px' }}>
-                        <option value="female">Female</option>
-                        <option value="male">Male</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Birth Date</label>
-                      <input type="date" name="birth_date" value={editAnimal.birth_date?.slice(0,10) || ''} onChange={handleEditChange} style={{ width: '100%', padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Weight (kg)</label>
-                      <input type="number" name="weight" step="0.1" value={editAnimal.weight} onChange={handleEditChange} style={{ width: '100%', padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Color</label>
-                      <input type="text" name="color" value={editAnimal.color} onChange={handleEditChange} style={{ width: '100%', padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Category</label>
-                      <select name="category" value={editAnimal.category} onChange={handleEditChange} style={{ width: '100%', padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px' }}>
-                        <option value="cow">Cow</option>
-                        <option value="donkey">Donkey</option>
-                        <option value="pig">Pig</option>
-                        <option value="sheep">Sheep</option>
-                        <option value="goat">Goat</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Photo</label>
-                      <input type="file" name="image" accept="image/*" onChange={handleEditChange} style={{ width: '100%', padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px' }} />
-                    </div>
-                  </div>
-                  <div className="d-flex gap-2 mt-3">
-                    <button type="submit" className="btn btn-primary btn-sm">Save</button>
-                    <button type="button" onClick={cancelEdit} className="btn btn-secondary btn-sm">Cancel</button>
-                  </div>
-                </form>
-              ) : (
-                <div className={viewMode === 'grid' ? '' : 'd-flex justify-content-between align-items-start'}>
-                  {viewMode === 'grid' ? (
-                    <GridAnimalCard animal={animal} />
-                      ) : (
-                    <>
-                   <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexDirection: viewMode === 'grid' ? 'column' : 'row' }}>
-                    <div style={{
-                      width: viewMode === 'grid' ? '100%' : '80px',
-                      height: viewMode === 'grid' ? '160px' : '80px',
-                      backgroundColor: '#e9ecef',
-                      borderRadius: viewMode === 'grid' ? '8px' : '50%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}>
-                      {animal.image ? (
-                        (() => {
-                          const base = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-                          const val = animal.image;
-                          const src = val.startsWith('http')
-                            ? val
-                            : val.startsWith('/')
-                              ? `${base}${val}`
-                              : `${base}/media/${val}`;
-                          return (
-                            <img src={src} alt={animal.name} style={{ width: '100%', height: '100%', borderRadius: viewMode === 'grid' ? '8px' : '50%', objectFit: 'cover' }} />
-                          );
-                        })()
-                      ) : (
-                        <MapPin size={32} color="#6c757d" />
-                      )}
-                    </div>
-                    <div style={{ width: '100%' }}>
-                      <h3 style={{ margin: '0 0 10px 0', fontSize: viewMode === 'grid' ? '18px' : 'inherit' }}>{animal.name}</h3>
-                      {viewMode === 'grid' ? (
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px' }}>
-                          <div><strong>ID:</strong> {animal.id}</div>
-                          <div><strong>Breed:</strong> {animal.breed}</div>
-                          <div><strong>Category:</strong> {animal.category}</div>
-                          <div><strong>Age:</strong> {calculateAge(animal.birth_date)}</div>
-                        </div>
-                      ) : (
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '15px', fontSize: '14px' }}>
-                          <div><strong>ID:</strong> {animal.id}</div>
-                          <div><strong>Breed:</strong> {animal.breed}</div>
-                          <div><strong>Gender:</strong> {animal.gender}</div>
-                          <div><strong>Category:</strong> {animal.category}</div>
-                          <div><strong>Age:</strong> {calculateAge(animal.birth_date)}</div>
-                          <div><strong>Weight:</strong> {animal.weight ? `${animal.weight} kg` : 'Unknown'}</div>
-                          <div><strong>Color:</strong> {animal.color || 'Unknown'}</div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
+            const isOnline = animal.gps_device?.is_online || false;
+            const batteryLevel = animal.gps_device?.battery_level || 0;
 
-                  <div style={{ display: 'flex', flexDirection: viewMode === 'grid' ? 'row' : 'column', alignItems: viewMode === 'grid' ? 'center' : 'flex-end', justifyContent: viewMode === 'grid' ? 'space-between' : 'flex-start', gap: '10px', width: viewMode === 'grid' ? '100%' : 'auto', marginTop: viewMode === 'grid' ? '10px' : '0' }}>
-                    <div className="d-flex align-items-center gap-2" style={{ marginRight: viewMode === 'grid' ? 'auto' : 0 }}>
-                      {isOnline ? <Wifi size={16} className="status-online" /> : <WifiOff size={16} className="status-offline" />}
-                      <span className={getStatusColor(isOnline)}>
-                        {getStatusText(isOnline)}
-                      </span>
-                      {animal.gps_device && (
-                        <>
-                          <Battery size={16} />
-                          <span style={{ fontSize: '14px' }}>{batteryLevel}%</span>
-                        </>
-                      )}
+            return (
+              <div key={animal.id} className="card" style={{ height: '100%' }}>
+                {editingId === animal.id ? (
+                  <form onSubmit={saveEdit}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Name</label>
+                        <input type="text" name="name" value={editAnimal.name} onChange={handleEditChange} style={{ width: '100%', padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Breed</label>
+                        <select name="breed" value={editAnimal.breed} onChange={handleEditChange} style={{ width: '100%', padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px' }}>
+                          <option value="holstein">Holstein</option>
+                          <option value="angus">Angus</option>
+                          <option value="hereford">Hereford</option>
+                          <option value="jersey">Jersey</option>
+                          <option value="simmental">Simmental</option>
+                          <option value="other">Other</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Gender</label>
+                        <select name="gender" value={editAnimal.gender} onChange={handleEditChange} style={{ width: '100%', padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px' }}>
+                          <option value="female">Female</option>
+                          <option value="male">Male</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Birth Date</label>
+                        <input type="date" name="birth_date" value={editAnimal.birth_date?.slice(0, 10) || ''} onChange={handleEditChange} style={{ width: '100%', padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Weight (kg)</label>
+                        <input type="number" name="weight" step="0.1" value={editAnimal.weight} onChange={handleEditChange} style={{ width: '100%', padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Color</label>
+                        <input type="text" name="color" value={editAnimal.color} onChange={handleEditChange} style={{ width: '100%', padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Category</label>
+                        <select name="category" value={editAnimal.category} onChange={handleEditChange} style={{ width: '100%', padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px' }}>
+                          <option value="cow">Cow</option>
+                          <option value="donkey">Donkey</option>
+                          <option value="pig">Pig</option>
+                          <option value="sheep">Sheep</option>
+                          <option value="goat">Goat</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>Photo</label>
+                        <input type="file" name="image" accept="image/*" onChange={handleEditChange} style={{ width: '100%', padding: '8px 12px', border: '1px solid #ddd', borderRadius: '4px' }} />
+                      </div>
                     </div>
-                    <div className="d-flex gap-2">
-                      <button
-                        className="btn btn-info btn-sm"
-                        onClick={() => {
-                          navigate('/map', { state: { highlightAnimal: animal.id } });
-                        }}
-                        title="View on Map"
-                      >
-                        <MapPin size={14} />
-                      </button>
-                      <Link to={`/animals/${animal.id}`} className="btn btn-primary btn-sm" style={{ textDecoration: 'none' }}>
-                        View Details
-                      </Link>
-                      <button className="btn btn-secondary btn-sm" onClick={() => startEdit(animal)}>Edit</button>
-                      <button className="btn btn-danger btn-sm" onClick={() => deleteAnimal(animal.id)}>Delete</button>
-                      <button
-                        className="btn btn-warning btn-sm"
-                        onClick={() => handleQuickAction(animal.id, 'buzzer')}
-                        disabled={!animal.gps_device}
-                        title="Activate Buzzer"
-                      >
-                        <Bell size={14} />
-                      </button>
-                      <button
-                        className="btn btn-info btn-sm"
-                        onClick={() => handleQuickAction(animal.id, 'sms')}
-                        disabled={!animal.gps_device}
-                        title="Request SMS"
-                      >
-                        <MessageSquare size={14} />
-                      </button>
+                    <div className="d-flex gap-2 mt-3">
+                      <button type="submit" className="btn btn-primary btn-sm">Save</button>
+                      <button type="button" onClick={cancelEdit} className="btn btn-secondary btn-sm">Cancel</button>
                     </div>
+                  </form>
+                ) : (
+                  <div className={viewMode === 'grid' ? '' : 'd-flex justify-content-between align-items-start'}>
+                    {viewMode === 'grid' ? (
+                      <GridAnimalCard animal={animal} />
+                    ) : (
+                      <>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexDirection: viewMode === 'grid' ? 'column' : 'row' }}>
+                          <div style={{
+                            width: viewMode === 'grid' ? '100%' : '80px',
+                            height: viewMode === 'grid' ? '160px' : '80px',
+                            backgroundColor: '#e9ecef',
+                            borderRadius: viewMode === 'grid' ? '8px' : '50%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}>
+                            {animal.image ? (
+                              (() => {
+                                const base = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+                                const val = animal.image;
+                                const src = val.startsWith('http')
+                                  ? val
+                                  : val.startsWith('/')
+                                    ? `${base}${val}`
+                                    : `${base}/media/${val}`;
+                                return (
+                                  <img src={src} alt={animal.name} style={{ width: '100%', height: '100%', borderRadius: viewMode === 'grid' ? '8px' : '50%', objectFit: 'cover' }} />
+                                );
+                              })()
+                            ) : (
+                              <MapPin size={32} color="#6c757d" />
+                            )}
+                          </div>
+                          <div style={{ width: '100%' }}>
+                            <h3 style={{ margin: '0 0 10px 0', fontSize: viewMode === 'grid' ? '18px' : 'inherit' }}>{animal.name}</h3>
+                            {viewMode === 'grid' ? (
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '13px' }}>
+                                <div><strong>ID:</strong> {animal.id}</div>
+                                <div><strong>Breed:</strong> {animal.breed}</div>
+                                <div><strong>Category:</strong> {animal.category}</div>
+                                <div><strong>Age:</strong> {calculateAge(animal.birth_date)}</div>
+                              </div>
+                            ) : (
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '15px', fontSize: '14px' }}>
+                                <div><strong>ID:</strong> {animal.id}</div>
+                                <div><strong>Breed:</strong> {animal.breed}</div>
+                                <div><strong>Gender:</strong> {animal.gender}</div>
+                                <div><strong>Category:</strong> {animal.category}</div>
+                                <div><strong>Age:</strong> {calculateAge(animal.birth_date)}</div>
+                                <div><strong>Weight:</strong> {animal.weight ? `${animal.weight} kg` : 'Unknown'}</div>
+                                <div><strong>Color:</strong> {animal.color || 'Unknown'}</div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: viewMode === 'grid' ? 'row' : 'column', alignItems: viewMode === 'grid' ? 'center' : 'flex-end', justifyContent: viewMode === 'grid' ? 'space-between' : 'flex-start', gap: '10px', width: viewMode === 'grid' ? '100%' : 'auto', marginTop: viewMode === 'grid' ? '10px' : '0' }}>
+                          <div className="d-flex align-items-center gap-2" style={{ marginRight: viewMode === 'grid' ? 'auto' : 0 }}>
+                            {isOnline ? <Wifi size={16} className="status-online" /> : <WifiOff size={16} className="status-offline" />}
+                            <span className={getStatusColor(isOnline)}>
+                              {getStatusText(isOnline)}
+                            </span>
+                            {animal.gps_device && (
+                              <>
+                                <Battery size={16} />
+                                <span style={{ fontSize: '14px' }}>{batteryLevel}%</span>
+                              </>
+                            )}
+                          </div>
+                          <div className="d-flex gap-2">
+                            <button
+                              className="btn btn-info btn-sm"
+                              onClick={() => {
+                                navigate('/map', { state: { highlightAnimal: animal.id } });
+                              }}
+                              title="View on Map"
+                            >
+                              <MapPin size={14} />
+                            </button>
+                            <Link to={`/animals/${animal.id}`} className="btn btn-primary btn-sm" style={{ textDecoration: 'none' }}>
+                              View Details
+                            </Link>
+                            <button className="btn btn-secondary btn-sm" onClick={() => startEdit(animal)}>Edit</button>
+                            <button className="btn btn-danger btn-sm" onClick={() => deleteAnimal(animal.id)}>Delete</button>
+                            <button
+                              className="btn btn-warning btn-sm"
+                              onClick={() => handleQuickAction(animal.id, 'buzzer')}
+                              disabled={!animal.gps_device}
+                              title="Activate Buzzer"
+                            >
+                              <Bell size={14} />
+                            </button>
+                            <button
+                              className="btn btn-info btn-sm"
+                              onClick={() => handleQuickAction(animal.id, 'sms')}
+                              disabled={!animal.gps_device}
+                              title="Request SMS"
+                            >
+                              <MessageSquare size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
-                  </>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
+                )}
+              </div>
+            );
+          })}
       </div>
 
       {animals.filter((a) => {
@@ -828,23 +830,23 @@ const Animals = () => {
           (a.color || '').toLowerCase().includes(term)
         );
       }).length === 0 && (
-        <div className="card text-center" style={{ padding: '60px' }}>
-          <CircleDot size={48} color="#6c757d" style={{ marginBottom: '20px' }} />
-          <h3>No livestock found</h3>
-          <p className="text-muted">
-            {animals.length === 0 ? 'Add your first animal to start tracking' : 'No livestock matches your search or filter'}
-          </p>
-          {animals.length === 0 && (
-            <button
-              className="btn btn-primary"
-              onClick={() => setShowAddForm(true)}
-            >
-              <Plus size={18} />
-              Add Livestock
-            </button>
-          )}
-        </div>
-      )}
+          <div className="card text-center" style={{ padding: '60px' }}>
+            <CircleDot size={48} color="#6c757d" style={{ marginBottom: '20px' }} />
+            <h3>No livestock found</h3>
+            <p className="text-muted">
+              {animals.length === 0 ? 'Add your first animal to start tracking' : 'No livestock matches your search or filter'}
+            </p>
+            {animals.length === 0 && (
+              <button
+                className="btn btn-primary"
+                onClick={() => setShowAddForm(true)}
+              >
+                <Plus size={18} />
+                Add Livestock
+              </button>
+            )}
+          </div>
+        )}
     </div>
   );
 };
