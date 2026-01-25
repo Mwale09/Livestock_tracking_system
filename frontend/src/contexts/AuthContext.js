@@ -83,7 +83,9 @@ export const AuthProvider = ({ children }) => {
       const response = await api.post('/api/auth/register/', userData);
       const { user } = response.data;
 
-      setUser(user);
+      // Don't set user state during registration so they go to login page first
+      // setUser(user);
+
       return { success: true };
     } catch (error) {
       return {

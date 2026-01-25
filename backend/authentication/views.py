@@ -97,6 +97,8 @@ def register_view(request):
             first_name=first_name,
             last_name=last_name
         )
+        # Login user immediately after registration
+        login(request, user)
         
         return Response({
             'message': 'Registration successful',

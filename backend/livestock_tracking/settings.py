@@ -131,7 +131,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "https://livestock-tracking-system.onrender.com",
-    # Add your frontend Render URL here when you deploy frontend
+    "https://high-tech-sherperd.onrender.com",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -160,6 +160,7 @@ CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "https://livestock-tracking-system.onrender.com",
+    "https://high-tech-sherperd.onrender.com",
     "https://*.onrender.com",  # All Render domains
 ]
 
@@ -175,8 +176,8 @@ SESSION_COOKIE_SECURE = True  # Use HTTPS for cookies on Render
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_AGE = 86400  # 24 hours
 
-# For local development, override these
-if DEBUG and 'localhost' in ALLOWED_HOSTS[0]:
+# For local development, override these ONLY if running on localhost
+if DEBUG and 'localhost' in ALLOWED_HOSTS[0] and not os.environ.get('RENDER'):
     CSRF_COOKIE_SECURE = False
     SESSION_COOKIE_SECURE = False
     SESSION_COOKIE_SAMESITE = 'Lax'
