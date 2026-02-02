@@ -232,7 +232,8 @@ const Dashboard = () => {
             const isOnline = location?.is_online || false;
 
             return (
-              <div key={animal.id} className="recent-row" style={{
+            return (
+              <div key={animal.id} className="recent-row mobile-stack" style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
@@ -249,7 +250,8 @@ const Dashboard = () => {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    overflow: 'hidden'
+                    overflow: 'hidden',
+                    flexShrink: 0
                   }}>
                     {animal.image ? (
                       (() => {
@@ -276,8 +278,8 @@ const Dashboard = () => {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                  <div className="text-center">
+                <div className="mobile-full-width" style={{ display: 'flex', alignItems: 'center', gap: '15px', justifyContent: 'space-between' }}>
+                  <div className="text-center mobile-full-width" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                     <div className={`d-flex align-items-center gap-2 ${getStatusColor(isOnline)}`}>
                       {isOnline ? <Wifi size={16} /> : <WifiOff size={16} />}
                       <span style={{ fontSize: '14px', fontWeight: '500' }}>
@@ -285,14 +287,14 @@ const Dashboard = () => {
                       </span>
                     </div>
                     {location && (
-                      <p style={{ margin: '5px 0 0 0', fontSize: '12px', color: '#6c757d' }}>
-                        {formatLastSeen(location.timestamp)}
-                      </p>
+                      <span style={{ fontSize: '12px', color: '#6c757d' }}>
+                        • {formatLastSeen(location.timestamp)}
+                      </span>
                     )}
                   </div>
 
                   <Link to={`/animals/${animal.id}`} className="btn btn-primary btn-sm">
-                    View Details
+                    View
                   </Link>
                 </div>
               </div>

@@ -30,11 +30,11 @@
 
 // ======================== YOUR SETTINGS - CHANGE THESE! ========================
 const char* DEVICE_ID = "GPS001";                      // From database registration
-const char* IMEI = "123456789012345";                  // Get from basic test (AT+GSN)
-const char* APN = "internet";                          // Econet APN (confirm with carrier)
-const char* SERVER_URL = "192.168.1.100";              // Your Django server IP
-const int SERVER_PORT = 8000;                          // Django server port
-const char* ALERT_PHONE = "+263771234567";             // Farmer's phone for SMS alerts
+const char* IMEI = "865067025786099";                  // Get from basic test (AT+GSN)
+const char* APN = "econet.net";                          // Econet APN (confirm with carrier)
+const char* SERVER_URL = "https://livestock-tracking-system.onrender.com/api/tracking/update_location/";              // Your Django server IP
+const int SERVER_PORT = 443;                          // Django server port
+const char* ALERT_PHONE = "+263714265736";             // Farmer's phone for SMS alerts
 
 // ======================== TIMING CONFIGURATION ========================
 const unsigned long GPS_UPDATE_INTERVAL = 60000;       // Send location every 60 seconds

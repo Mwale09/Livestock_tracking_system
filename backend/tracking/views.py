@@ -31,7 +31,34 @@ class AnimalViewSet(viewsets.ModelViewSet):
         return Animal.objects.filter(owner=self.request.user, is_active=True)
     
     def perform_create(self, serializer):
-        serializer.save(owner=self.request.user, is_active=True)
+        animal = serializer.save(owner=self.request.user, is_active=True)
+        self._handle_device_linking(animal)
+        
+    def perform_update(self, serializer):
+        animal = serializer.save()
+        self._handle_device_linking(animal)
+
+    def _handle_device_linking(self, animal):
+        """Link device to animal and trigger automation"""
+        device_id = self.request.data.get('device_id')
+        if device_id:
+            try:
+                device = GPSDevice.objects.get(device_id=device_id)
+                # Link device
+                device.animal = animal
+                device.save()
+                
+                # Automation: Configure device with user's phone number
+                user_profile = getattr(self.request.user, 'userprofile', None)
+                if user_profile and user_profile.phone_number:
+                    DeviceCommand.objects.create(
+                        device=device,
+                        command_type='configuration',
+                        message=f'SET_OWNER_NUMBER={user_profile.phone_number}',
+                        status='pending'
+                    )
+            except GPSDevice.DoesNotExist:
+                pass
     
     @action(detail=True, methods=['get'])
     def location_history(self, request, pk=None):
@@ -122,7 +149,12 @@ class GPSDeviceViewSet(viewsets.ModelViewSet):
     queryset = GPSDevice.objects.all()
     
     def get_queryset(self):
-        return GPSDevice.objects.filter(animal__owner=self.request.user)
+        # Allow access to unassigned devices or devices owned by user to re-link if needed
+        # But primarily filter by user
+        queryset = GPSDevice.objects.filter(
+            Q(animal__owner=self.request.user) | Q(animal__isnull=True)
+        )
+        return queryset
     
     @action(detail=False, methods=['get'])
     def online_devices(self, request):
@@ -135,6 +167,13 @@ class GPSDeviceViewSet(viewsets.ModelViewSet):
     def offline_devices(self, request):
         """Get all offline devices"""
         devices = self.get_queryset().filter(status='offline')
+        serializer = self.get_serializer(devices, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def unassigned_devices(self, request):
+        """Get all devices not linked to any animal"""
+        devices = GPSDevice.objects.filter(animal__isnull=True)
         serializer = self.get_serializer(devices, many=True)
         return Response(serializer.data)
 
@@ -224,25 +263,30 @@ def check_geofence_violations(device, latitude, longitude):
     Returns list of violated geofences
     """
     violations = []
-    animal = device.animal
-    
-    # Get all active geofences for this animal
-    geofences = Geofence.objects.filter(animal=animal, is_active=True)
-    
-    for geofence in geofences:
-        # Calculate distance from current location to geofence center
-        distance = calculate_distance(
-            latitude, longitude,
-            geofence.center_latitude, geofence.center_longitude
-        )
+    try:
+        if not hasattr(device, 'animal'):
+            return []
+        animal = device.animal
         
-        # If distance exceeds radius, it's a violation
-        if distance > float(geofence.radius):
-            violations.append({
-                'geofence': geofence,
-                'distance': distance,
-                'radius': geofence.radius
-            })
+        # Get all active geofences for this animal
+        geofences = Geofence.objects.filter(animal=animal, is_active=True)
+        
+        for geofence in geofences:
+            # Calculate distance from current location to geofence center
+            distance = calculate_distance(
+                latitude, longitude,
+                geofence.center_latitude, geofence.center_longitude
+            )
+            
+            # If distance exceeds radius, it's a violation
+            if distance > float(geofence.radius):
+                violations.append({
+                    'geofence': geofence,
+                    'distance': distance,
+                    'radius': geofence.radius
+                })
+    except Exception as e:
+        print(f"Error checking geofence: {e}")
     
     return violations
 
@@ -265,8 +309,8 @@ def create_geofence_notification(device, geofence, distance):
             animal_id=animal.id,
             device_id=device.device_id,
             location_data={
-                'latitude': float(device.locations.first().latitude),
-                'longitude': float(device.locations.first().longitude),
+                'latitude': float(device.locations.first().latitude) if device.locations.exists() else 0,
+                'longitude': float(device.locations.first().longitude) if device.locations.exists() else 0,
                 'geofence_name': geofence.name,
                 'distance': float(distance)
             }
@@ -296,16 +340,17 @@ def broadcast_location_update(device, location_data):
                 }
             )
             # Also send to animal-specific group
-            async_to_sync(channel_layer.group_send)(
-                f'animal_{device.animal.id}',
-                {
-                    'type': 'location_update',
-                    'device_id': device.device_id,
-                    'latitude': float(location_data.latitude),
-                    'longitude': float(location_data.longitude),
-                    'timestamp': location_data.timestamp.isoformat(),
-                }
-            )
+            if hasattr(device, 'animal'):
+                async_to_sync(channel_layer.group_send)(
+                    f'animal_{device.animal.id}',
+                    {
+                        'type': 'location_update',
+                        'device_id': device.device_id,
+                        'latitude': float(location_data.latitude),
+                        'longitude': float(location_data.longitude),
+                        'timestamp': location_data.timestamp.isoformat(),
+                    }
+                )
     except Exception as e:
         # If channels is not configured, just continue
         print(f"WebSocket broadcast error (this is OK if channels not configured): {e}")
@@ -319,20 +364,6 @@ def update_location(request):
     """
     Endpoint for GPS devices (Arduino + SIM808) to update their location.
     Accepts device_id or imei to identify the device.
-    
-    Expected JSON format from SIM808:
-    {
-        "device_id": "GPS001" or "imei": "123456789012345",
-        "latitude": -17.85,
-        "longitude": 31.05,
-        "status": "OK",
-        "battery_level": 85,
-        "altitude": 1500.5,
-        "speed": 0.0,
-        "heading": 180.0,
-        "accuracy": 10.5,
-        "timestamp": "2024-01-15T10:30:00Z"  // Optional
-    }
     """
     data = request.data
     
@@ -444,4 +475,3 @@ def update_location(request):
         response_data['warning'] = 'Geofence breach detected!'
     
     return Response(response_data, status=status.HTTP_201_CREATED)
-

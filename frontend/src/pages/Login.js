@@ -11,6 +11,8 @@ const Login = () => {
   const [formData, setFormData] = useState({
     username: '',
     email: '',
+    phone_number: '',
+    address: '',
     password: '',
     confirmPassword: ''
   });
@@ -52,6 +54,8 @@ const Login = () => {
         const result = await register({
           username: formData.username,
           email: formData.email,
+          phone_number: formData.phone_number,
+          address: formData.address,
           password: formData.password
         });
 
@@ -144,20 +148,48 @@ const Login = () => {
             </div>
 
             {!isLogin && (
-              <div className="mb-3">
-                <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '8px' }}>
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  name="email"
-                  className="form-input"
-                  placeholder="name@example.com"
-                  value={formData.email}
-                  onChange={handleChange}
-                  required
-                />
-              </div>
+              <>
+                <div className="mb-3">
+                  <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '8px' }}>
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    name="email"
+                    className="form-input"
+                    placeholder="name@example.com"
+                    value={formData.email}
+                    onChange={handleChange}
+                    required
+                  />
+                </div>
+                <div className="mb-3">
+                  <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '8px' }}>
+                    Phone Number
+                  </label>
+                  <input
+                    type="tel"
+                    name="phone_number"
+                    className="form-input"
+                    placeholder="+1234567890"
+                    value={formData.phone_number}
+                    onChange={handleChange}
+                  />
+                </div>
+                <div className="mb-3">
+                  <label style={{ display: 'block', fontSize: '14px', fontWeight: '500', marginBottom: '8px' }}>
+                    Address
+                  </label>
+                  <input
+                    type="text"
+                    name="address"
+                    className="form-input"
+                    placeholder="City, Country"
+                    value={formData.address}
+                    onChange={handleChange}
+                  />
+                </div>
+              </>
             )}
 
             <div className="mb-3">

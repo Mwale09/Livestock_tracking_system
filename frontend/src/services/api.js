@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || "https://livestock-tracking-system.onrender.com";
+const API_BASE_URL = process.env.REACT_APP_API_URL || (window.location.hostname === 'localhost' ? 'http://localhost:8000' : "https://livestock-tracking-system.onrender.com");
 
 // Create axios instance
 const api = axios.create({
@@ -40,7 +40,12 @@ api.interceptors.response.use(
     const url = error.config?.url || '';
     const onLoginPage = window.location.pathname.startsWith('/login');
     const isAuthEndpoint = url.includes('/api/auth/login') || url.includes('/api/auth/register') || url.includes('/api/auth/user');
-    if (status === 401 && !isAuthEndpoint && !onLoginPage) {
+
+    // Redirect to login on 401 (Unauthorized) or 403 (Forbidden) if not on auth pages
+    if ((status === 401 || status === 403) && !isAuthEndpoint && !onLoginPage) {
+      // Clear local storage and redirect
+      localStorage.clear();
+      sessionStorage.clear();
       window.location.href = '/login';
     }
     return Promise.reject(error);
@@ -62,9 +67,11 @@ export const animalsAPI = {
 
 export const devicesAPI = {
   getAll: () => api.get('/api/tracking/devices/'),
+  create: (data) => api.post('/api/tracking/devices/', data),
   getById: (id) => api.get(`/api/tracking/devices/${id}/`),
   getOnline: () => api.get('/api/tracking/devices/online_devices/'),
   getOffline: () => api.get('/api/tracking/devices/offline_devices/'),
+  getUnassigned: () => api.get('/api/tracking/devices/unassigned_devices/'),
 };
 
 export const locationsAPI = {
@@ -91,6 +98,8 @@ export const authAPI = {
   logout: () => api.post('/api/auth/logout/'),
   register: (userData) => api.post('/api/auth/register/', userData),
   getUser: () => api.get('/api/auth/user/'),
+  updateProfile: (data) => api.patch('/api/auth/update_profile/', data),
+  changePassword: (data) => api.post('/api/auth/change_password/', data),
 };
 
 export { api };

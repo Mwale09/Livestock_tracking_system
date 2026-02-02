@@ -1,0 +1,73 @@
+/* Account Page Styling */
+.account-tabs .list-group-item {
+  border: 1px solid var(--border-color);
+  margin-bottom: 5px;
+  border-radius: 6px;
+  background-color: var(--card-bg);
+  color: var(--text-main);
+  transition: all 0.2s ease;
+}
+
+:root[data-theme='dark'] .account-tabs .list-group-item {
+  border-color: var(--border-color-dark);
+  background-color: var(--card-bg-dark);
+}
+
+.account-tabs .list-group-item.active {
+  background-color: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+.account-tabs .list-group-item:hover:not(.active) {
+  background-color: var(--bg-light);
+}
+
+/* Fix for form inputs in dark mode */
+:root[data-theme='dark'] .form-control {
+  background-color: #0b0f14;
+  border-color: #1b2330;
+  color: #e6f1ff;
+}
+
+:root[data-theme='dark'] .form-control:focus {
+  background-color: #0b0f14;
+  border-color: var(--primary);
+  color: #e6f1ff;
+}
+
+:root[data-theme='dark'] .input-group-text {
+  background-color: #1b2330;
+  border-color: #1b2330;
+  color: #94a3b8;
+}
+
+/* Navbar Dropdown Fixes */
+.dropdown-menu {
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-lg);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+:root[data-theme='dark'] .dropdown-menu {
+  background-color: var(--card-bg);
+  border-color: var(--border-color-dark);
+}
+
+.dropdown-item {
+  border-radius: 4px;
+  padding: 8px 12px;
+}
+
+:root[data-theme='dark'] .dropdown-item {
+  color: var(--text-main);
+}
+
+:root[data-theme='dark'] .dropdown-item:hover {
+  background-color: var(--bg-light);
+}
+
+:root[data-theme='dark'] .dropdown-divider {
+  border-top-color: var(--border-color-dark);
+}

@@ -12,6 +12,7 @@ import Map from './pages/Map';
 import Notifications from './pages/Notifications';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
+import Account from './pages/Account';
 
 // Context
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -65,6 +66,7 @@ function AppContent() {
             <Route path="/map" element={<Map />} />
             <Route path="/notifications" element={<Notifications />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/account" element={<Account />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

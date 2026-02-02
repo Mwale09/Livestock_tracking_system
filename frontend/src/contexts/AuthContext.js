@@ -93,9 +93,28 @@ export const AuthProvider = ({ children }) => {
 
       return { success: true };
     } catch (error) {
+      console.error('Registration error:', error);
+      const data = error.response?.data;
+      let message = data?.message || data?.detail || error.message || 'Registration failed';
+
+      // Parse Django REST Framework field errors
+      if (!data?.message && typeof data === 'object' && data) {
+        // Find the first field with an error
+        const firstKey = Object.keys(data)[0];
+        if (firstKey) {
+          const errorContent = data[firstKey];
+          const errorMsg = Array.isArray(errorContent) ? errorContent[0] : errorContent;
+          // Format: "username: This field is required" or just "This field is required"
+          message = `${firstKey}: ${errorMsg}`;
+          if (firstKey === 'non_field_errors') {
+            message = errorMsg;
+          }
+        }
+      }
+
       return {
         success: false,
-        error: error.response?.data?.message || 'Registration failed'
+        error: message
       };
     }
   };

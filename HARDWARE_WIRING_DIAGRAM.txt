@@ -148,6 +148,7 @@ GSM (on SIM808)   Internal   ~100mA (idle)       ~2A (transmitting)
 Buzzer            5V         ~30mA               ~30mA
 ─────────────────────────────────────────────────────────────────────────
 TOTAL REQUIRED    5V 2A minimum (for SIM808) + 7-12V for Arduino
+    (OR 3.7V 1200mAh Li-ion battery for SIM808 when testing)
 
 
 POWER SUPPLY OPTIONS:
@@ -159,13 +160,22 @@ POWER SUPPLY OPTIONS:
     * Use a USB breakout board (available at electronics shops)
     * Red wire = +5V → SIM808 VCC
     * Black wire = GND → Common ground
+
+✅ NEW! Option 2: Field Testing (Single Battery + Laptop)
+  - Battery Specs: 3.7V, 1200mAh, 4.44Wh Li-ion Battery
+  - Arduino: USB power from Laptop (on your desk or in your bag)
+  - SIM808: Powered DIRECTLY by the 3.7V Battery
+    * Battery (+) ────► SIM808 VBAT/VCC
+    * Battery (-) ────► Breadboard GND Rail
+    * Arduino GND ──► Breadboard GND Rail (Crucial! COMMON GROUND)
+  - Why this works: SIM808 modules are designed to run on 3.7V Li-ion batteries!
   
-Option 2: Field Deployment (Single Battery) - Later, after testing works
+Option 3: Field Deployment (Single Battery for Everything) - Later
   - 12V Battery (car battery or 3S LiPo)
   - Arduino powered via barrel jack (7-12V)
   - 5V 2A Buck Converter for SIM808 (12V → 5V)
   
-Option 3: Portable Testing
+Option 4: Portable Testing (Dual Power Banks)
   - Arduino: 9V battery or USB power bank
   - SIM808: Separate 5V 2A power bank
 

@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Plus, MapPin, Bell, MessageSquare, Wifi, WifiOff, Battery, Calendar, Search, CircleDot, Eye, Edit, Trash2 } from 'lucide-react';
-import { animalsAPI } from '../services/api';
+import { animalsAPI, devicesAPI } from '../services/api';
 import toast from 'react-hot-toast';
+import RegisterDeviceModal from '../components/RegisterDeviceModal';
 
 const Animals = () => {
   const navigate = useNavigate();
   const [animals, setAnimals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [unassignedDevices, setUnassignedDevices] = useState([]);
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState(() => {
@@ -44,6 +47,14 @@ const Animals = () => {
       setLoading(true);
       const response = await animalsAPI.getAll();
       setAnimals(response.data.results || response.data);
+
+      // Also fetch unassigned devices
+      try {
+        const devicesRes = await devicesAPI.getUnassigned();
+        setUnassignedDevices(devicesRes.data);
+      } catch (err) {
+        console.error('Failed to fetch devices', err);
+      }
     } catch (error) {
       console.error('Error fetching animals:', error);
       toast.error('Failed to load animals');
@@ -409,6 +420,13 @@ const Animals = () => {
             Refresh
           </button>
           <button
+            className="btn btn-outline-primary"
+            onClick={() => setShowRegisterModal(true)}
+          >
+            <Plus size={18} />
+            Register Tracker
+          </button>
+          <button
             className="btn btn-primary"
             onClick={() => setShowAddForm(!showAddForm)}
           >
@@ -417,6 +435,15 @@ const Animals = () => {
           </button>
         </div>
       </div>
+
+      <RegisterDeviceModal
+        isOpen={showRegisterModal}
+        onClose={() => setShowRegisterModal(false)}
+        onSuccess={() => {
+          // Re-fetch devices to update the list
+          fetchAnimals();
+        }}
+      />
 
       {/* Add Animal Form */}
       {showAddForm && (
@@ -601,6 +628,32 @@ const Animals = () => {
                     borderRadius: '4px'
                   }}
                 />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: '500' }}>
+                  Link GPS Tracker
+                </label>
+                <select
+                  name="device_id"
+                  onChange={handleInputChange}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px'
+                  }}
+                >
+                  <option value="">-- Select Tracker --</option>
+                  {unassignedDevices.map(device => (
+                    <option key={device.device_id} value={device.device_id}>
+                      {device.device_id} {device.imei ? `(IMEI: ${device.imei})` : ''}
+                    </option>
+                  ))}
+                </select>
+                <p style={{ margin: '5px 0 0 0', color: '#6c757d', fontSize: '13px' }}>
+                  Linking a tracker will automatically configure it with your phone number.
+                </p>
               </div>
             </div>
 

@@ -109,6 +109,7 @@ class DeviceCommand(models.Model):
         ('sms', 'Send SMS'),
         ('location', 'Request Location'),
         ('status', 'Request Status'),
+        ('configuration', 'Configuration'),
     ]
     
     COMMAND_STATUS = [
