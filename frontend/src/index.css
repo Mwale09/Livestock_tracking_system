@@ -511,7 +511,10 @@ code {
 }
 
 /* Theme Switch Toggle style */
-gap: 10px;
+.theme-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 /* Mobile Responsiveness Utilities */

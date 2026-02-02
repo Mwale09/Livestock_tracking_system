@@ -232,7 +232,6 @@ const Dashboard = () => {
             const isOnline = location?.is_online || false;
 
             return (
-            return (
               <div key={animal.id} className="recent-row mobile-stack" style={{
                 display: 'flex',
                 alignItems: 'center',
