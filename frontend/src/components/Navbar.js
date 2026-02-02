@@ -116,7 +116,12 @@ const Navbar = ({ socketConnected }) => {
         zIndex: 1000,
         backgroundColor: theme === 'dark' ? '#0f141b' : '#fff',
         borderBottom: `1px solid ${theme === 'dark' ? '#1b2330' : '#e9ecef'}`,
-        transition: 'all 0.3s ease'
+        transition: 'all 0.3s ease',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '0 20px',
+        height: '60px'
       }}>
         <div className="navbar-brand" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <h3 style={{ margin: 0, color: '#2563eb', fontSize: '1.25rem' }}>Livestock Tracking System</h3>
