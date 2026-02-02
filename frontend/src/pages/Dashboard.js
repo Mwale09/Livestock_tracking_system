@@ -30,7 +30,7 @@ const Dashboard = () => {
     const lng = animalWithLocation?.longitude || defaultLng;
     fetchWeather(lat, lng);
     countCategories(animals);
-  }, [animals, currentLocations]);
+  }, [animals, currentLocations, defaultLat, defaultLng]);
 
   const fetchDashboardData = async () => {
     try {
