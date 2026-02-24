@@ -50,8 +50,6 @@ class Animal(models.Model):
 
 class GPSDevice(models.Model):
     """Model representing a GPS tracking device"""
-    
-
     DEVICE_STATUS_CHOICES = [
         ('online', 'Online'),
         ('offline', 'Offline'),
@@ -60,9 +58,9 @@ class GPSDevice(models.Model):
     ]
     
     device_id = models.CharField(max_length=100, unique=True, help_text="Unique device identifier")
-    animal = models.OneToOneField(Animal, on_delete=models.SET_NULL,null=True, blank=True, related_name='gps_device')
+    animal = models.OneToOneField(Animal, on_delete=models.CASCADE, related_name='gps_device')
     imei = models.CharField(max_length=20, unique=True, help_text="Device IMEI number")
-    phone_number = models.CharField(max_length=20, null=True, blank=True, help_text="GSM phone number for SMS")
+    phone_number = models.CharField(max_length=20, help_text="GSM phone number for SMS")
     status = models.CharField(max_length=20, choices=DEVICE_STATUS_CHOICES, default='offline')
     battery_level = models.IntegerField(default=0, help_text="Battery percentage")
     last_seen = models.DateTimeField(null=True, blank=True)
@@ -70,8 +68,7 @@ class GPSDevice(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     def __str__(self):
-        animal_name = self.animal.name if self.animal else "UNASSIGNED"
-        return f"Device {self.device_id} - {animal_name}"
+        return f"Device {self.device_id} - {self.animal.name}"
     
     @property
     def is_online(self):
@@ -95,8 +92,7 @@ class LocationData(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     
     def __str__(self):
-        animal_name = self.device.animal.name if (self.device and self.device.animal) else "UNASSIGNED"
-        return f"{animal_name} - {self.latitude}, {self.longitude} at {self.timestamp}"
+        return f"{self.device.animal.name} - {self.latitude}, {self.longitude} at {self.timestamp}"
     
     class Meta:
         ordering = ['-timestamp']
@@ -132,8 +128,7 @@ class DeviceCommand(models.Model):
     executed_at = models.DateTimeField(null=True, blank=True)
     
     def __str__(self):
-        animal_name = self.device.animal.name if (self.device and self.device.animal) else "UNASSIGNED"
-        return f"{animal_name} - {self.command_type} - {self.status}"
+        return f"{self.device.animal.name} - {self.command_type} - {self.status}"
     
     class Meta:
         ordering = ['-created_at']
