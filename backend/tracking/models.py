@@ -50,6 +50,8 @@ class Animal(models.Model):
 
 class GPSDevice(models.Model):
     """Model representing a GPS tracking device"""
+    
+
     DEVICE_STATUS_CHOICES = [
         ('online', 'Online'),
         ('offline', 'Offline'),
@@ -68,7 +70,8 @@ class GPSDevice(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     def __str__(self):
-        return f"Device {self.device_id} - {self.animal.name}"
+        animal_name = self.animal.name if self.animal else "UNASSIGNED"
+        return f"Device {self.device_id} - {animal_name}"
     
     @property
     def is_online(self):
@@ -92,7 +95,8 @@ class LocationData(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     
     def __str__(self):
-        return f"{self.device.animal.name} - {self.latitude}, {self.longitude} at {self.timestamp}"
+        animal_name = self.device.animal.name if (self.device and self.device.animal) else "UNASSIGNED"
+        return f"{animal_name} - {self.latitude}, {self.longitude} at {self.timestamp}"
     
     class Meta:
         ordering = ['-timestamp']
@@ -128,7 +132,8 @@ class DeviceCommand(models.Model):
     executed_at = models.DateTimeField(null=True, blank=True)
     
     def __str__(self):
-        return f"{self.device.animal.name} - {self.command_type} - {self.status}"
+        animal_name = self.device.animal.name if (self.device and self.device.animal) else "UNASSIGNED"
+        return f"{animal_name} - {self.command_type} - {self.status}"
     
     class Meta:
         ordering = ['-created_at']
