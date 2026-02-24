@@ -8,7 +8,7 @@ const RegisterDeviceModal = ({ isOpen, onClose, onSuccess }) => {
     const [formData, setFormData] = useState({
         device_id: '',
         imei: '',
-        phone_number: '' // Optional logic if you want to set SIM number
+        phone_number: '+263777444222' // Optional logic if you want to set SIM number
     });
 
     if (!isOpen) return null;
