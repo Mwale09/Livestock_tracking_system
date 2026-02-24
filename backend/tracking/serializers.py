@@ -50,7 +50,7 @@ class GPSDeviceSerializer(serializers.ModelSerializer):
     
     phone_number = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     animal = serializers.PrimaryKeyRelatedField(queryset=Animal.objects.all(), required=False, allow_null=True)
-    imei = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    imei = serializers.CharField(required=True)
 
 
     class Meta:
