@@ -63,6 +63,7 @@ export const animalsAPI = {
   getLocationHistory: (id, params) => api.get(`/api/tracking/animals/${id}/location_history/`, { params }),
   activateBuzzer: (id) => api.post(`/api/tracking/animals/${id}/activate_buzzer/`),
   requestSMS: (id, data) => api.post(`/api/tracking/animals/${id}/request_sms/`, data),
+  list: () => api.get("/api/tracking/animals/"),
 };
 
 export const devicesAPI = {
