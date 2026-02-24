@@ -58,9 +58,9 @@ class GPSDevice(models.Model):
     ]
     
     device_id = models.CharField(max_length=100, unique=True, help_text="Unique device identifier")
-    animal = models.OneToOneField(Animal, on_delete=models.CASCADE, related_name='gps_device')
+    animal = models.OneToOneField(Animal, on_delete=models.SET_NULL,null=True, blank=True, related_name='gps_device')
     imei = models.CharField(max_length=20, unique=True, help_text="Device IMEI number")
-    phone_number = models.CharField(max_length=20, help_text="GSM phone number for SMS")
+    phone_number = models.CharField(max_length=20, null=True, blank=True, help_text="GSM phone number for SMS")
     status = models.CharField(max_length=20, choices=DEVICE_STATUS_CHOICES, default='offline')
     battery_level = models.IntegerField(default=0, help_text="Battery percentage")
     last_seen = models.DateTimeField(null=True, blank=True)
