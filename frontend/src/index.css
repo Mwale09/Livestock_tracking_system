@@ -446,9 +446,7 @@ code {
 :root[data-theme='dark'] .btn-info {
   background-color: #0ea5e9;
   color: #0b1320;
-}
-
-/* Neon accents for icons */
+}/* Neon accents for icons */
 :root[data-theme='dark'] svg.status-offline {
   color: #ef4444;
 }
@@ -548,9 +546,7 @@ code {
   .navbar {
     padding: 0 15px;
     height: 60px;
-  }
-
-  .auth-card {
+  }  .auth-card {
     padding: 20px;
   }
 }
