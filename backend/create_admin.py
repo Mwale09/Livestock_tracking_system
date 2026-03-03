@@ -23,7 +23,11 @@ def create_admin():
             User.objects.create_superuser(username=username, email=email, password=password)
             print("Superuser created successfully!")
         else:
-            print(f"Superuser '{username}' already exists. Skipping creation.")
+            print(f"Superuser '{username}' already exists. Updating password.")
+            user = User.objects.get(username=username)
+            user.set_password(password)
+            user.save()
+            print("Superuser password updated successfully!")
     except Exception as e:
         print(f"An error occurred while creating superuser: {e}")
 
