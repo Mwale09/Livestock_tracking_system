@@ -60,7 +60,7 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # Whitenoise storage for compression and caching
 if not DEBUG:
-    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedStaticFilesStorage'
 
 # Media files
 MEDIA_URL = '/media/'
