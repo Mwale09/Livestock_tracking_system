@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Circle, ZoomControl, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, Circle, ZoomControl, useMap, Polyline } from 'react-leaflet';
 import { Icon } from 'leaflet';
 import { useSocket } from '../contexts/SocketContext';
-import { locationsAPI } from '../services/api';
+import { locationsAPI, animalsAPI } from '../services/api';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import toast from 'react-hot-toast';
@@ -45,6 +45,9 @@ const Map = () => {
   const location = useLocation();
   const [locations, setLocations] = useState([]);
   const [selectedAnimal, setSelectedAnimal] = useState(null);
+  const [historyAnimalId, setHistoryAnimalId] = useState(null);
+  const [historyPoints, setHistoryPoints] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [targetLocation, setTargetLocation] = useState(null);
   const [loading, setLoading] = useState(true);
   const [mapType, setMapType] = useState('hybrid'); // Default to hybrid for better livestock tracking
@@ -112,6 +115,43 @@ const Map = () => {
     subscribeToAnimal(animalId);
   };
 
+  const fetchAnimalHistory = async (animalId) => {
+    if (!animalId) return;
+    try {
+      setHistoryLoading(true);
+      setHistoryAnimalId(animalId);
+      setHistoryPoints([]);
+      // Backend defaults to last 24h if no params are provided
+      const response = await animalsAPI.getLocationHistory(animalId, {});
+      const points = (response.data || [])
+        .map((p) => {
+          const lat = parseFloat(p.latitude);
+          const lng = parseFloat(p.longitude);
+          if (isNaN(lat) || isNaN(lng)) return null;
+          return [lat, lng];
+        })
+        .filter(Boolean);
+
+      if (points.length === 0) {
+        toast.error('No location history for this animal in the last 24 hours');
+      } else {
+        setHistoryPoints(points);
+        const [lastLat, lastLng] = points[points.length - 1];
+        setTargetLocation({ latitude: lastLat, longitude: lastLng });
+      }
+    } catch (error) {
+      console.error('Error fetching location history:', error);
+      toast.error('Failed to load location history');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const clearHistory = () => {
+    setHistoryPoints([]);
+    setHistoryAnimalId(null);
+  };
+
   const getCategoryColor = (category) => {
     const colors = {
       cow: '#4CAF50',
@@ -158,6 +198,11 @@ const Map = () => {
           {isConnected && <span className="status-online"> • Connected</span>}
           {!isConnected && <span className="status-offline"> • Disconnected</span>}
         </p>
+        {historyAnimalId && (
+          <p className="text-muted" style={{ fontSize: '0.9rem' }}>
+            Showing 24-hour trail for animal ID <strong>{historyAnimalId}</strong>
+          </p>
+        )}
       </div>
 
       <div className="card" style={{ height: '600px', padding: 0, position: 'relative', overflow: 'hidden' }}>
@@ -255,6 +300,17 @@ const Map = () => {
             </>
           )}
 
+          {historyPoints.length > 1 && (
+            <Polyline
+              positions={historyPoints}
+              pathOptions={{
+                color: '#22c55e',
+                weight: 4,
+                opacity: 0.8,
+              }}
+            />
+          )}
+
           {locations.map((location) => {
             if (!location.latitude || !location.longitude) return null;
 
@@ -319,13 +375,31 @@ const Map = () => {
                         </p>
                       )}
                       {location.animal_id && (
-                        <button
-                          className="btn btn-primary btn-sm"
-                          style={{ marginTop: '10px', width: '100%' }}
-                          onClick={() => navigate(`/animals/${location.animal_id}`)}
-                        >
-                          View Full Details
-                        </button>
+                        <>
+                          <button
+                            className="btn btn-primary btn-sm"
+                            style={{ marginTop: '10px', width: '100%' }}
+                            onClick={() => navigate(`/animals/${location.animal_id}`)}
+                          >
+                            View Full Details
+                          </button>
+                          <button
+                            className="btn btn-outline-primary btn-sm"
+                            style={{ marginTop: '8px', width: '100%' }}
+                            disabled={historyLoading && historyAnimalId === location.animal_id}
+                            onClick={() =>
+                              historyAnimalId === location.animal_id && historyPoints.length
+                                ? clearHistory()
+                                : fetchAnimalHistory(location.animal_id)
+                            }
+                          >
+                            {historyLoading && historyAnimalId === location.animal_id
+                              ? 'Loading trail...'
+                              : historyAnimalId === location.animal_id && historyPoints.length
+                              ? 'Hide 24h Trail'
+                              : 'Show 24h Trail'}
+                          </button>
+                        </>
                       )}
                     </div>
                   </div>
