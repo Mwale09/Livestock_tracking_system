@@ -132,7 +132,9 @@ const AnimalDetail = () => {
 
   const isOnline = animal.gps_device?.is_online || false;
   const batteryLevel = animal.gps_device?.battery_level || 0;
-  const lastLocation = animal.last_location;
+  // Prefer the most recent item from history (if loaded) so "Current Location" card always matches the latest known point
+  const latestHistoryLocation = locationHistory && locationHistory.length > 0 ? locationHistory[0] : null;
+  const lastLocation = latestHistoryLocation || animal.last_location;
   const rawImage = animal.image;
   const photoUrl = rawImage
     ? (rawImage.startsWith('http')

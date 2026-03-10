@@ -80,7 +80,7 @@ class AnimalViewSet(viewsets.ModelViewSet):
             locations = device.locations.filter(
                 timestamp__gte=start_date,
                 timestamp__lte=end_date
-            ).order_by('timestamp')
+            ).order_by('-timestamp')  # Newest first so latest is at top of list
             
             serializer = LocationDataSerializer(locations, many=True)
             return Response(serializer.data)
