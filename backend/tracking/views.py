@@ -195,7 +195,9 @@ class LocationDataViewSet(viewsets.ReadOnlyModelViewSet):
         current_locations = []
         
         for device in devices:
-            latest_location = device.locations.first()
+            # Explicitly order by -timestamp so we always pick the newest point,
+            # even if default ordering ever changes.
+            latest_location = device.locations.order_by('-timestamp').first()
             if latest_location:
                 location_data = LocationDataSerializer(latest_location).data
                 location_data['animal_name'] = device.animal.name
@@ -424,7 +426,9 @@ def update_location(request):
     )
     
     # Update device status
-    device.last_seen = timezone.now()
+    # Keep "last_seen" aligned with the same timestamp we stored on the location,
+    # so Last Seen and Last Update don't drift apart.
+    device.last_seen = timestamp
     device.status = 'online'
     
     # Update status if provided
