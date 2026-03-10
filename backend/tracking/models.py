@@ -95,10 +95,12 @@ class LocationData(models.Model):
         return f"{self.device.animal.name} - {self.latitude}, {self.longitude} at {self.timestamp}"
     
     class Meta:
-        ordering = ['-timestamp']
+        # Order by when the row was created so a single bad/future GPS timestamp
+        # can't freeze "latest location" logic.
+        ordering = ['-created_at']
         indexes = [
-            models.Index(fields=['device', '-timestamp']),
-            models.Index(fields=['-timestamp']),
+            models.Index(fields=['device', '-created_at']),
+            models.Index(fields=['-created_at']),
         ]
 
 

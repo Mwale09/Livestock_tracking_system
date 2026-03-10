@@ -195,9 +195,9 @@ class LocationDataViewSet(viewsets.ReadOnlyModelViewSet):
         current_locations = []
         
         for device in devices:
-            # Explicitly order by -timestamp so we always pick the newest point,
-            # even if default ordering ever changes.
-            latest_location = device.locations.order_by('-timestamp').first()
+            # Use created_at so the newest saved point wins, even if a GPS timestamp
+            # in the past or future is wrong.
+            latest_location = device.locations.order_by('-created_at').first()
             if latest_location:
                 location_data = LocationDataSerializer(latest_location).data
                 location_data['animal_name'] = device.animal.name
