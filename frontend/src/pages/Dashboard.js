@@ -24,14 +24,6 @@ const Dashboard = () => {
     fetchDashboardData();
   }, []);
 
-  // Poll dashboard data so online/offline counts and "recent animals" stay fresh while tracking
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetchDashboardData();
-    }, 15000); // every 15 seconds
-    return () => clearInterval(interval);
-  }, []);
-
   useEffect(() => {
     const animalWithLocation = currentLocations[0];
     const lat = animalWithLocation?.latitude || defaultLat;

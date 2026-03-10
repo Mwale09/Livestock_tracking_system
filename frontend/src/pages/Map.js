@@ -51,6 +51,7 @@ const Map = () => {
   const [targetLocation, setTargetLocation] = useState(null);
   const [loading, setLoading] = useState(true);
   const [mapType, setMapType] = useState('hybrid'); // Default to hybrid for better livestock tracking
+  const [liveMode, setLiveMode] = useState(false);
   const mapRef = useRef(null);
   const navigate = useNavigate();
 
@@ -69,14 +70,15 @@ const Map = () => {
   useEffect(() => {
     fetchCurrentLocations();
   }, []);
-
-  // Simple polling as a fallback when WebSocket is not wired up in production
+  
+  // Optional live mode (off by default to avoid "refreshy" UX)
   useEffect(() => {
+    if (!liveMode) return;
     const interval = setInterval(() => {
-      fetchCurrentLocations();
-    }, 10000); // every 10 seconds
+      fetchCurrentLocations({ silent: true });
+    }, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [liveMode]);
 
   useEffect(() => {
     if (lastLocationUpdate) {
@@ -84,16 +86,22 @@ const Map = () => {
     }
   }, [lastLocationUpdate]);
 
-  const fetchCurrentLocations = async () => {
+  const fetchCurrentLocations = async ({ silent } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const response = await locationsAPI.getCurrent();
-      setLocations(response.data);
+      // Only update state if something actually changed (reduces UI "refresh" feel)
+      setLocations((prev) => {
+        const next = response.data || [];
+        const prevJson = JSON.stringify(prev);
+        const nextJson = JSON.stringify(next);
+        return prevJson === nextJson ? prev : next;
+      });
     } catch (error) {
       console.error('Error fetching locations:', error);
-      toast.error('Failed to load location data');
+      if (!silent) toast.error('Failed to load location data');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -206,6 +214,19 @@ const Map = () => {
           {isConnected && <span className="status-online"> • Connected</span>}
           {!isConnected && <span className="status-offline"> • Disconnected</span>}
         </p>
+        <div className="d-flex align-items-center gap-2" style={{ flexWrap: 'wrap' }}>
+          <button className="btn btn-secondary btn-sm" onClick={() => fetchCurrentLocations()}>
+            Refresh locations
+          </button>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--text-muted)' }}>
+            <input
+              type="checkbox"
+              checked={liveMode}
+              onChange={(e) => setLiveMode(e.target.checked)}
+            />
+            Live update (10s)
+          </label>
+        </div>
         {historyAnimalId && (
           <p className="text-muted" style={{ fontSize: '0.9rem' }}>
             Showing 24-hour trail for animal ID <strong>{historyAnimalId}</strong>

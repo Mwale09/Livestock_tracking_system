@@ -21,14 +21,6 @@ const AnimalDetail = () => {
     fetchAnimalDetails();
   }, [id]);
 
-  // Poll for latest animal details every 10 seconds so cards stay updated while tracking
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetchAnimalDetails();
-    }, 10000);
-    return () => clearInterval(interval);
-  }, [id]);
-
   useEffect(() => {
     if (animal) {
       fetchLocationHistory();
@@ -53,6 +45,24 @@ const AnimalDetail = () => {
     try {
       const response = await animalsAPI.getLocationHistory(id, dateRange);
       setLocationHistory(response.data);
+
+      // Keep device "Last Seen" consistent with newest location point (prevents mismatch like 18:36 vs 17:02)
+      const newest = Array.isArray(response.data) && response.data.length > 0 ? response.data[0] : null;
+      if (newest?.timestamp) {
+        setAnimal((prev) => {
+          if (!prev) return prev;
+          const next = { ...prev };
+          next.last_location = newest;
+          if (next.gps_device) {
+            const currentLastSeen = next.gps_device.last_seen ? new Date(next.gps_device.last_seen).getTime() : 0;
+            const newestTs = new Date(newest.timestamp).getTime();
+            if (newestTs && newestTs > currentLastSeen) {
+              next.gps_device = { ...next.gps_device, last_seen: newest.timestamp };
+            }
+          }
+          return next;
+        });
+      }
     } catch (error) {
       console.error('Error fetching location history:', error);
       toast.error('Failed to load location history');
