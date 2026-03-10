@@ -21,6 +21,14 @@ const AnimalDetail = () => {
     fetchAnimalDetails();
   }, [id]);
 
+  // Poll for latest animal details every 10 seconds so cards stay updated while tracking
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchAnimalDetails();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [id]);
+
   useEffect(() => {
     if (animal) {
       fetchLocationHistory();

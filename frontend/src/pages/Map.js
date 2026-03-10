@@ -70,6 +70,14 @@ const Map = () => {
     fetchCurrentLocations();
   }, []);
 
+  // Simple polling as a fallback when WebSocket is not wired up in production
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchCurrentLocations();
+    }, 10000); // every 10 seconds
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     if (lastLocationUpdate) {
       updateLocation(lastLocationUpdate);
