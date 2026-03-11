@@ -20,6 +20,8 @@ class AnimalSerializer(serializers.ModelSerializer):
             device = obj.gps_device
             return {
                 'device_id': device.device_id,
+                'imei': device.imei,
+                'phone_number': device.phone_number,
                 'status': device.status,
                 'battery_level': device.battery_level,
                 'last_seen': device.last_seen,

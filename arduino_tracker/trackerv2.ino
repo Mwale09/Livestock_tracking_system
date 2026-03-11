@@ -640,6 +640,12 @@ bool postToThingsBoard(const char *payload) {
   return (httpCode == 200 || httpCode == 201);
 }
 
+// ===================== OFFLINE SMS SUPPORT =====================
+int consecutivePostFails = 0;
+unsigned long lastOfflineSMS = 0;
+const unsigned long OFFLINE_SMS_COOLDOWN_MS = 30UL * 60UL * 1000UL; // 30 minutes
+const int OFFLINE_FAIL_THRESHOLD = 3; // number of consecutive HTTP failures before SMS
+
 // ===================== SETUP =====================
 void setup() {
   Serial.begin(115200);
@@ -713,7 +719,22 @@ void loop() {
 
   if (postToThingsBoard(payloadBuffer)) {
     Serial.println(F("POST OK"));
+    consecutivePostFails = 0;
   } else {
     Serial.println(F("POST FAIL"));
+    consecutivePostFails++;
+
+    if (consecutivePostFails >= OFFLINE_FAIL_THRESHOLD) {
+      if (lastOfflineSMS == 0 || millis() - lastOfflineSMS > OFFLINE_SMS_COOLDOWN_MS) {
+        lastOfflineSMS = millis();
+        char msg[200];
+        snprintf(msg, sizeof(msg),
+                 "ALERT: Tracker %s seems OFFLINE (HTTP errors). Last known at https://maps.google.com/?q=%.6f,%.6f",
+                 DEVICE_ID,
+                 currentLat,
+                 currentLng);
+        sendSMS(ALERT_PHONE, msg);
+      }
+    }
   }
 }

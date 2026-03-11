@@ -307,6 +307,22 @@ const Map = () => {
             </>
           )}
 
+          {/* Draw geofence circle from backend (first geofence attached to locations) */}
+          {locations.length > 0 && locations[0].geofence_center_lat && (
+            <Circle
+              center={[
+                parseFloat(locations[0].geofence_center_lat),
+                parseFloat(locations[0].geofence_center_lng),
+              ]}
+              radius={locations[0].geofence_radius_m || 10}
+              pathOptions={{
+                color: locations.some((loc) => loc.geofence_status === 'breach') ? '#ef4444' : '#22c55e',
+                weight: 2,
+                fillOpacity: 0.05,
+              }}
+            />
+          )}
+
           {historyPoints.length > 1 && (
             <Polyline
               positions={historyPoints}
@@ -328,8 +344,9 @@ const Map = () => {
             if (isNaN(lat) || isNaN(lng)) return null;
 
             const isOnline = location.is_online;
+            const isGeofenceBreach = location.geofence_status === 'breach';
             const category = location.animal_category || 'cow';
-            const markerColor = getMarkerColor(category, isOnline);
+            const markerColor = isGeofenceBreach ? '#ef4444' : getMarkerColor(category, isOnline);
             const baseColor = getCategoryColor(category);
 
             return (

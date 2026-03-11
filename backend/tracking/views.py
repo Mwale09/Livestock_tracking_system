@@ -205,6 +205,33 @@ class LocationDataViewSet(viewsets.ReadOnlyModelViewSet):
                 location_data['is_online'] = device.is_online
                 location_data['animal_category'] = device.animal.category
                 location_data['animal_id'] = device.animal.id
+
+                # Geofence status from backend rules: if any active geofence is violated,
+                # mark as 'breach', otherwise 'ok' when geofences exist, or 'unknown'.
+                from .models import Geofence  # local import to avoid circulars on startup
+                geofences = Geofence.objects.filter(animal=device.animal, is_active=True)
+                if geofences.exists():
+                    from .views import calculate_distance
+                    breached = False
+                    for gf in geofences:
+                        d = calculate_distance(
+                            latest_location.latitude,
+                            latest_location.longitude,
+                            gf.center_latitude,
+                            gf.center_longitude,
+                        )
+                        if d > float(gf.radius):
+                            breached = True
+                            break
+                    location_data['geofence_status'] = 'breach' if breached else 'ok'
+                    # Expose first geofence circle so frontend can draw it
+                    first = geofences.first()
+                    location_data['geofence_center_lat'] = float(first.center_latitude)
+                    location_data['geofence_center_lng'] = float(first.center_longitude)
+                    location_data['geofence_radius_m'] = float(first.radius)
+                else:
+                    location_data['geofence_status'] = 'unknown'
+
                 current_locations.append(location_data)
         
         return Response(current_locations)
