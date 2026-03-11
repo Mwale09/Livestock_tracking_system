@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, MapPin, Bell, MessageSquare, Wifi, WifiOff, Battery, Clock, Activity, Calendar } from 'lucide-react';
+import { ArrowLeft, MapPin, Wifi, WifiOff, Battery } from 'lucide-react';
 import { animalsAPI } from '../services/api';
 import { useTheme } from '../contexts/ThemeContext';
 import toast from 'react-hot-toast';
@@ -66,21 +66,6 @@ const AnimalDetail = () => {
     } catch (error) {
       console.error('Error fetching location history:', error);
       toast.error('Failed to load location history');
-    }
-  };
-
-  const handleQuickAction = async (action) => {
-    try {
-      if (action === 'buzzer') {
-        await animalsAPI.activateBuzzer(id);
-        toast.success('Buzzer activation command sent');
-      } else if (action === 'sms') {
-        await animalsAPI.requestSMS(id, { message: 'Location request' });
-        toast.success('SMS request sent');
-      }
-    } catch (error) {
-      console.error(`Error with ${action}:`, error);
-      toast.error(`Failed to send ${action} command`);
     }
   };
 
@@ -283,33 +268,6 @@ const AnimalDetail = () => {
               <div>
                 <strong>{isOnline ? 'Last Update' : 'Last Seen'}:</strong> {formatDateTime(lastLocation.timestamp)}
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* Quick Actions */}
-        {animal.gps_device && (
-          <div className="card">
-            <div className="card-header">
-              <h3 className="card-title">Quick Actions</h3>
-            </div>
-            <div style={{ display: 'grid', gap: '10px' }}>
-              <button
-                className="btn btn-warning"
-                onClick={() => handleQuickAction('buzzer')}
-                style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
-              >
-                <Bell size={18} />
-                Activate Buzzer
-              </button>
-              <button
-                className="btn btn-info"
-                onClick={() => handleQuickAction('sms')}
-                style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
-              >
-                <MessageSquare size={18} />
-                Request SMS
-              </button>
             </div>
           </div>
         )}

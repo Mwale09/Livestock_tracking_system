@@ -32,12 +32,20 @@ class AnimalSerializer(serializers.ModelSerializer):
         try:
             last_location = obj.gps_device.locations.first()
             if last_location:
+                # Basic geofence flag: true if any active geofence is breached for this point
+                from .views import check_geofence_violations
+                violations = check_geofence_violations(
+                    obj.gps_device,
+                    last_location.latitude,
+                    last_location.longitude,
+                )
                 return {
                     'latitude': last_location.latitude,
                     'longitude': last_location.longitude,
                     'timestamp': last_location.timestamp,
                     'speed': last_location.speed,
-                    'heading': last_location.heading
+                    'heading': last_location.heading,
+                    'geofence_status': 'breach' if violations else 'ok',
                 }
         except GPSDevice.DoesNotExist:
             pass

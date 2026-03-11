@@ -125,16 +125,6 @@ const Navbar = ({ socketConnected }) => {
       }}>
         <div className="navbar-brand" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <h3 style={{ margin: 0, color: '#2563eb', fontSize: '1.25rem' }}>Livestock Tracking System</h3>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            {socketConnected ? (
-              <Wifi size={16} className="status-online" />
-            ) : (
-              <WifiOff size={16} className="status-offline" />
-            )}
-            <span className="desktop-only" style={{ fontSize: '12px', color: socketConnected ? '#22c55e' : '#ef4444', fontWeight: '500' }}>
-              {socketConnected ? 'Connected' : 'Disconnected'}
-            </span>
-          </div>
         </div>
 
         <div className="navbar-nav desktop-only" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>

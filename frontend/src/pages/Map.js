@@ -50,7 +50,7 @@ const Map = () => {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [targetLocation, setTargetLocation] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [mapType, setMapType] = useState('hybrid'); // Default to hybrid for better livestock tracking
+  const [mapType, setMapType] = useState('standard'); // Default to labelled standard map
   const [liveMode, setLiveMode] = useState(false);
   const mapRef = useRef(null);
   const navigate = useNavigate();
@@ -209,29 +209,6 @@ const Map = () => {
     <div className="container" style={{ padding: '20px' }}>
       <div className="mb-3">
         <h1>Real-time Map</h1>
-        <p className="text-muted">
-          Live tracking of your livestock locations
-          {isConnected && <span className="status-online"> • Connected</span>}
-          {!isConnected && <span className="status-offline"> • Disconnected</span>}
-        </p>
-        <div className="d-flex align-items-center gap-2" style={{ flexWrap: 'wrap' }}>
-          <button className="btn btn-secondary btn-sm" onClick={() => fetchCurrentLocations()}>
-            Refresh locations
-          </button>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '14px', color: 'var(--text-muted)' }}>
-            <input
-              type="checkbox"
-              checked={liveMode}
-              onChange={(e) => setLiveMode(e.target.checked)}
-            />
-            Live update (10s)
-          </label>
-        </div>
-        {historyAnimalId && (
-          <p className="text-muted" style={{ fontSize: '0.9rem' }}>
-            Showing 24-hour trail for animal ID <strong>{historyAnimalId}</strong>
-          </p>
-        )}
       </div>
 
       <div className="card" style={{ height: '600px', padding: 0, position: 'relative', overflow: 'hidden' }}>
@@ -306,6 +283,7 @@ const Map = () => {
           style={{ height: '100%', width: '100%' }}
           ref={mapRef}
           zoomControl={false}
+          maxZoom={18}
         >
           <ZoomControl position="bottomleft" />
           <MapController targetLocation={targetLocation} zoomLevel={16} />
