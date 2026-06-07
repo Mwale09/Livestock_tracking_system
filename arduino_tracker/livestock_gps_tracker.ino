@@ -1,1000 +1,889 @@
-/*
- * ============================================================================
- * LIVESTOCK GPS TRACKER - Main Code
- * ============================================================================
- *
- * Hardware: Arduino Uno + SIM808 Module + Buzzer
- * Purpose: Real-time livestock tracking with geofence alerts
- *
- * Features:
- * - GPS location tracking and transmission to server
- * - SMS alerts when offline or geofence breach
- * - Remote buzzer activation from web app
- * - Battery level monitoring
- * - Automatic reconnection on network loss
- *
- * ============================================================================
- * CONFIGURATION - UPDATE THESE VALUES!
- * ============================================================================
- */
+#include <HardwareSerial.h>
 
-#include <SoftwareSerial.h>
-// #include <TinyGPS++.h>  // REMOVED - using manual AT+CGNSINF parsing for
-// reliability
+#define MODEM_RX_PIN 16
+#define MODEM_TX_PIN 17
+#define BUZZER_PIN   25   // ESP32 GPIO for buzzer (use active buzzer via transistor)
 
-// ======================== PIN CONFIGURATION ========================
-#define SIM808_TX 7
-#define SIM808_RX 8
-#define SIM808_PWR 4
-#define BUZZER_PIN 9
+HardwareSerial sim808(2);
 
-// ======================== YOUR SETTINGS - CHANGE THESE!
-// ========================
-const char *DEVICE_ID = "GPS001";     // From database registration
-const char *IMEI = "865067025786099"; // Get from basic test (AT+GSN)
-const char *APN = "econet.net";       // Econet APN (confirm with carrier)
-const char *SERVER_URL = "https://livestock-tracking-system.onrender.com/api/"
-                         "tracking/update_location/"; // Your Django server IP
-const int SERVER_PORT = 443;                          // Django server port
-const char *ALERT_PHONE = "+263714265736"; // Farmer's phone for SMS alerts
+// ===================== SETTINGS =====================
+const char *APN = "econet.net";
+const char *DEVICE_ID = "GPS001";
+//const char *TB_URL = "http://eu.thingsboard.cloud/api/v1/uveeyeqoxudmdmgu3267/telemetry";
+// Fallback when the APN/modem can't do DNS (HTTPACTION 603).
+// Set this to the resolved IP of eu.thingsboard.cloud (same path), e.g.
+// "http://<IP>/api/v1/<TOKEN>/telemetry"
+// Leave empty to disable IP fallback.
+//const char *TB_URL_IP = "";const char *TB_URL_IP = "http://3.69.110.78/api/v1/uveeyeqoxudmdmgu3267/telemetry";
+const char *TB_URL = "http://3.69.110.78/api/v1/uveeyeqoxudmdmgu3267/telemetry";
+const char *ALERT_PHONE = "+263714265736"; // change to your number
 
-// ======================== TIMING CONFIGURATION ========================
-const unsigned long GPS_UPDATE_INTERVAL =
-    60000;                                // Send location every 60 seconds
-const unsigned long GPS_TIMEOUT = 120000; // GPS fix timeout (2 minutes)
-const unsigned long COMMAND_CHECK_INTERVAL =
-    30000; // Check for commands every 30 seconds
-const unsigned long OFFLINE_SMS_INTERVAL =
-    300000;                                  // Send offline SMS after 5 minutes
-const unsigned long BUZZER_DURATION = 10000; // Buzzer sounds for 10 seconds
+const unsigned long SEND_INTERVAL_MS    = 60000UL; // 60 seconds
+const unsigned long BUZZER_DURATION_MS  = 10000UL; // 10 seconds
+const unsigned long GEOFENCE_SMS_COOLDOWN_MS = 600000UL; // 10 minutes
 
-// ======================== OBJECTS ========================
-SoftwareSerial sim808(SIM808_TX, SIM808_RX);
-// TinyGPSPlus gps; // REMOVED
+// Geofence around your kraal
+const double GEOFENCE_LAT      = -20.168522;
+const double GEOFENCE_LNG      =  28.643799;
+const double GEOFENCE_RADIUS_M = 10.0; // 10 meters
 
-// ======================== GLOBAL VARIABLES ========================
-unsigned long lastGPSUpdate = 0;
-unsigned long lastCommandCheck = 0;
-unsigned long lastOnlineTime = 0;
-unsigned long buzzerStartTime = 0;
-bool isOnline = false;
-bool buzzerActive = false;
-bool systemInitialized = false;
-int batteryLevel = 100;
-
-// GPS Data Variables
+// ===================== BUFFERS =====================
+char responseBuffer[256];
+char payloadBuffer[256];
+// ===================== STATE =====================
 float currentLat = 0.0;
 float currentLng = 0.0;
-float currentAlt = 0.0;
 float currentSpeed = 0.0;
-int currentSats = 0;
+float currentHeading = 0.0;
+int batteryLevel = 100;
 bool gpsValid = false;
 
-// Shared buffers to avoid heap fragmentation and stack overflow
-char responseBuffer[151]; // Reduced from 201 to save RAM
-char payloadBuffer[251];  // Reduced from 300 to save RAM
+unsigned long lastSend = 0;
+unsigned long lastSMSCheck = 0;
+unsigned long lastGeofenceSMS = 0;
 
-// ======================== SETUP ========================
-void setup() {
-  // Initialize serial communications
-  Serial.begin(9600);
-  sim808.begin(9600);
+bool buzzerActive = false;
+unsigned long buzzerStart = 0;
 
-  // Configure pins
-  pinMode(SIM808_PWR, OUTPUT);
-  pinMode(BUZZER_PIN, OUTPUT);
-
-  // Welcome message
-  printWelcome();
-
-  // Power on SIM808
-  powerOnSIM808();
-  // Give SIM808 and SIM card time to settle (longer = more reliable, especially
-  // evening/poor signal)
-  delay(8000);
-
-  // Initialize SIM808 module
-  if (initializeSIM808()) {
-    systemInitialized = true;
-    Serial.println(F("\n✓ System initialization complete!"));
-    playSuccessBeep();
-    Serial.println(F("===========================================\n"));
-  } else {
-    Serial.println(F("\n✗ System initialization failed!"));
-    Serial.println(F("Check hardware and try again."));
-    Serial.println(F("===========================================\n"));
-  }
-}
-
-// ======================== MAIN LOOP ========================
-void loop() {
-  if (!systemInitialized) {
-    // If initialization failed, try again every 30 seconds
-    delay(30000);
-    Serial.println(F("Retrying initialization..."));
-    if (initializeSIM808()) {
-      systemInitialized = true;
-    }
-    return;
-  }
-
-  // Read GPS data continuously (No longer needed for TinyGPS++)
-  /*
-  while (sim808.available() > 0) {
-    char c = sim808.read();
-    gps.encode(c);
-  }
-  */
-
-  // Update GPS location at intervals
-  if (millis() - lastGPSUpdate >= GPS_UPDATE_INTERVAL) {
-    lastGPSUpdate = millis();
-
-    Serial.println(F("\n--- GPS Update Cycle ---"));
-    if (getGPSLocation()) {
-      Serial.println(F("   ✓ Location updated"));
-      printGPSInfo();
-      sendLocationToServer();
-    } else {
-      Serial.println(F("   ⏳ Waiting for GPS fix (No valid coordinates yet)"));
-    }
-  }
-
-  // Check for server commands (buzzer activation)
-  if (millis() - lastCommandCheck >= COMMAND_CHECK_INTERVAL) {
-    lastCommandCheck = millis();
-    checkForCommands();
-  }
-
-  // Check if we've been offline too long
-  if (!isOnline && (millis() - lastOnlineTime >= OFFLINE_SMS_INTERVAL)) {
-    Serial.println(F("\n⚠ Device offline too long - sending SMS alert"));
-    sendOfflineSMS();
-    lastOnlineTime = millis(); // Reset timer to avoid spam
-  }
-
-  // Update battery level periodically
-  static unsigned long lastBatteryCheck = 0;
-  if (millis() - lastBatteryCheck >= 300000) { // Every 5 minutes
-    lastBatteryCheck = millis();
-    batteryLevel = getBatteryLevel();
-  }
-
-  // Handle buzzer
-  handleBuzzer();
-
-  // Small delay to prevent overwhelming the processor
-  delay(100);
-}
-
-// ======================== INITIALIZATION FUNCTIONS ========================
-
-void printWelcome() {
-  Serial.println(F("\n\n==========================================="));
-  Serial.println(F("   LIVESTOCK GPS TRACKER"));
-  Serial.print(F("   RAM: "));
-  Serial.print(freeMemory());
-  Serial.println(F(" bytes free"));
-  Serial.println(F("==========================================="));
-  Serial.println(F("\nConfiguration:"));
-  Serial.print(F("  Device ID: "));
-  Serial.println(DEVICE_ID);
-  Serial.print(F("  IMEI: "));
-  Serial.println(IMEI);
-  Serial.print(F("  Server: "));
-  Serial.print(SERVER_URL);
-  Serial.print(F(":"));
-  Serial.println(SERVER_PORT);
-  Serial.print(F("  Alert Phone: "));
-  Serial.println(ALERT_PHONE);
-  Serial.println(F("\n==========================================="));
-  Serial.println(F("Serial Monitor: 9600 baud"));
-  Serial.println(F("Starting system initialization..."));
-  Serial.println(F("===========================================\n"));
-}
-
-void powerOnSIM808() {
-  Serial.println(F("1. Powering on SIM808 module..."));
-  digitalWrite(SIM808_PWR, HIGH);
-  delay(2000);
-  digitalWrite(SIM808_PWR, LOW);
-  delay(3000);
-  Serial.println(F("   ✓ Power sequence complete"));
-}
-
-// Power on GPS; accepts OK or "already on" so init does not fail when GPS is
-// on.
-bool powerOnGPS() {
-  const int GPS_PWR_ATTEMPTS = 3;
-  const unsigned long GPS_PWR_TIMEOUT = 4000;
-
-  for (int i = 0; i < GPS_PWR_ATTEMPTS; i++) {
-    flushSIM808Buffer();
-    delay(200);
-    sendATCommandGetResponse("AT+CGNSPWR=1", GPS_PWR_TIMEOUT);
-    if (strstr(responseBuffer, "OK")) {
-      return true;
-    }
-    // Some modules don't return OK when GPS is already on; no ERROR = assume OK
-    if (!strstr(responseBuffer, "ERROR") && strlen(responseBuffer) > 0) {
-      return true;
-    }
-    delay(1500);
-  }
-  return false;
-}
-
-bool initializeSIM808() {
-  Serial.println(F("\n2. Initializing SIM808..."));
-
-  // FORCE GPS OFF to stop NMEA flooding IMMEDIATELY!
-  // This is the most common cause of hangs during startup.
-  sendATCommand("AT+CGNSPWR=0", "OK", 2000);
-  flushSIM808Buffer();
-  delay(500);
-
-  // Test AT communication
-  Serial.print(F("   Testing AT communication... "));
-  if (!sendATCommand("AT", "OK", 2000)) {
-    Serial.println(F("✗ Failed"));
-    return false;
-  }
-  Serial.println(F("✓"));
-
-  // Disable echo
-  Serial.print(F("   Disabling echo... "));
-  sendATCommand("ATE0", "OK", 2000);
-  Serial.println(F("✓"));
-  delay(400);
-
-  // Check signal strength
-  Serial.print(F("   Checking signal strength... "));
-  sendATCommandGetResponse("AT+CSQ", 2000);
-  char *csqPtr = strstr(responseBuffer, "+CSQ: ");
-  if (csqPtr) {
-    int signalValue = atoi(csqPtr + 6);
-    Serial.print(signalValue);
-    if (signalValue >= 10) {
-      Serial.println(F(" ✓"));
-    } else {
-      Serial.println(F(" ⚠ Weak"));
-    }
-  } else {
-    Serial.println(F("?"));
-  }
-
-  // Drain any leftover bytes from AT+CSQ so next command gets clean response
-  flushSIM808Buffer();
-  delay(800);
-
-  // Check SIM card - use same get-response-then-check logic as diagnostic
-  // (sendATCommand was sometimes missing READY; getResponse + indexOf is
-  // reliable)
-  Serial.print(F("   Checking SIM card... "));
-  bool simReady = false;
-  for (int i = 0; i < 8; i++) {
-    flushSIM808Buffer();
-    delay(200); // Short pause after flush so module is ready
-    sendATCommandGetResponse("AT+CPIN?", 10000);
-    if (strstr(responseBuffer, "READY")) {
-      simReady = true;
-      break;
-    }
-    delay(2000); // Wait before retry when SIM is slow
-    Serial.print(F("."));
-  }
-
-  if (!simReady) {
-    Serial.println(F("✗ Failed - Check SIM card"));
-    flushSIM808Buffer();
-    delay(200);
-    Serial.print(F("   Last response: "));
-    sendATCommandGetResponse("AT+CPIN?", 5000);
+// ===================== NETWORK / DNS HELPERS =====================
+bool configureDNS() {
+  // Prefer SAPBR DNS parameters; these are supported on SIM800/SIM808 when using SAPBR bearer.
+  // (AT+CDNSCFG is not available on some firmwares -> ERROR.)
+  bool ok1 = sendCommand("AT+SAPBR=3,1,\"DNS1\",\"8.8.8.8\"", "OK", 5000);
+  bool ok2 = sendCommand("AT+SAPBR=3,1,\"DNS2\",\"1.1.1.1\"", "OK", 5000);
+  if (!ok1 || !ok2) {
+    Serial.println(F("DNSCFG FAIL"));
     Serial.println(responseBuffer);
     return false;
   }
-  Serial.println(F("✓"));
-
-  // Drain buffer before network check
-  flushSIM808Buffer();
-  delay(2000); // Let network state settle (basic test has 1s between steps)
-
-  // Network registration - can take longer in evening / congested network
-  Serial.print(F("   Registering on network... "));
-  bool registered = false;
-  const int CREG_ATTEMPTS = 25; // ~60+ seconds total
-  const unsigned long CREG_TIMEOUT = 3000;
-
-  for (int i = 0; i < CREG_ATTEMPTS; i++) {
-    flushSIM808Buffer();
-    sendATCommandGetResponse("AT+CREG?", CREG_TIMEOUT);
-
-    if (strstr(responseBuffer, "+CREG: 0,1") ||
-        strstr(responseBuffer, "+CREG: 0,5")) {
-      registered = true;
-      Serial.println(F("✓"));
-      delay(500);
-      break;
-    }
-    if (strstr(responseBuffer, "+CREG: 0,2")) {
-      Serial.print(F("s")); // searching
-    } else {
-      Serial.print(F("."));
-    }
-    delay(3000); // 3 seconds between attempts (network can be slow)
-  }
-
-  if (!registered) {
-    Serial.println(F("✗ Failed - No network"));
-    Serial.print(F("   Last response: "));
-    sendATCommandGetResponse("AT+CREG?", 3000);
-    Serial.println(responseBuffer);
-    return false;
-  }
-
-  // Configure GPRS first (before GPS is on - so serial is quiet and APN gets a
-  // response)
-  Serial.println(F("\n3. Configuring GPRS..."));
-  if (!setupGPRS()) {
-    Serial.println(F("   ✗ GPRS setup failed"));
-    return false;
-  }
-  Serial.println(F("   ✓ GPRS configured"));
-
-  flushSIM808Buffer();
-  delay(500);
-
-  // Power on GPS after GPRS (so NMEA doesn't flood the line during SAPBR
-  // commands)
-  Serial.print(F("   Powering on GPS... "));
-  if (!powerOnGPS()) {
-    Serial.println(F("✗ Failed"));
-    return false;
-  }
-  Serial.println(F("✓"));
-
   return true;
 }
 
-bool setupGPRS() {
-  flushSIM808Buffer();
-  delay(300);
-
-  // Close any existing bearer (reset state)
-  sendATCommand("AT+SAPBR=0,1", "OK", 2000);
-  delay(500);
-
-  // Ensure GPRS is attached
-  sendATCommand("AT+CGATT=1", "OK", 3000);
-  delay(500);
-
-  // Set connection type to GPRS (retry in case buffer had GPS data)
-  Serial.print(F("   Bearer type... "));
-  for (int i = 0; i < 3; i++) {
-    if (sendATCommand("AT+SAPBR=3,1,\"CONTYPE\",\"GPRS\"", "OK", 3000)) {
-      Serial.println(F("✓"));
-      break;
-    }
-    if (i == 2)
-      return false;
-    flushSIM808Buffer();
-    delay(500);
-  }
-
-  flushSIM808Buffer();
-  delay(600);
-
-  // Set APN
-  Serial.print(F("   APN... "));
-  bool apnOk = false;
-  for (int i = 0; i < 3; i++) {
-    flushSIM808Buffer();
-    delay(200);
-
-    sim808.print(F("AT+SAPBR=3,1,\"APN\",\""));
-    sim808.print(APN);
-    sim808.println(F("\""));
-
-    unsigned long startTime = millis();
-    memset(responseBuffer, 0, sizeof(responseBuffer));
-    int idx = 0;
-    while (millis() - startTime < 6000) {
-      while (sim808.available()) {
-        char c = (char)sim808.read();
-        if (idx < sizeof(responseBuffer) - 1) {
-          responseBuffer[idx++] = c;
-          responseBuffer[idx] = '\0';
-        }
-      }
-      if (strstr(responseBuffer, "OK")) {
-        apnOk = true;
-        break;
-      }
-      if (strstr(responseBuffer, "ERROR")) {
-        break;
-      }
-      delay(20);
-    }
-
-    if (apnOk) {
-      Serial.println(F("✓"));
-      break;
-    }
-    if (i == 2) {
-      Serial.println(F("✗"));
-      Serial.print(F("   Last APN response: "));
-      Serial.println(responseBuffer);
-      return false;
-    }
-    delay(500);
-  }
-  if (!apnOk)
-    return false;
-
-  // Open bearer
-  Serial.print(F("   Opening bearer... "));
-  sendATCommand("AT+SAPBR=1,1", "OK", 15000);
-  delay(2000);
-  Serial.println(F("✓"));
-
-  sendATCommand("AT+SAPBR=2,1", "OK", 2000);
-
-  return true;
+void hardResetBearer() {
+  sendCommand("AT+SAPBR=0,1", "OK", 15000);
+  delay(1500);
+  sendCommand("AT+SAPBR=1,1", "OK", 25000);
+  delay(4000);
 }
 
-// ======================== GPS FUNCTIONS ========================
-
-void printGPSInfo() {
-  if (!gpsValid) {
-    Serial.println(F("   No valid GPS data available."));
-    return;
-  }
-
-  Serial.println(F("\n📍 Current Location:"));
-  Serial.print(F("   Lat: "));
-  Serial.println(currentLat, 6);
-  Serial.print(F("   Lon: "));
-  Serial.println(currentLng, 6);
-
-  Serial.print(F("   Alt: "));
-  Serial.print(currentAlt);
-  Serial.println(F(" m"));
-
-  Serial.print(F("   Speed: "));
-  Serial.print(currentSpeed);
-  Serial.println(F(" km/h"));
-
-  Serial.print(F("   Satellites: "));
-  Serial.println(currentSats);
-
-  Serial.print(F("   Status: "));
-  Serial.println(F("FIXED"));
-}
-
-bool getGPSLocation() {
-  flushSIM808Buffer();
-  sendATCommandGetResponse("AT+CGNSINF", 2000);
-
-  // Response format: +CGNSINF: <GNSS run status>,<Fix status>,<UTC date &
-  // time>,<Latitude>,<Longitude>,<MSL Altitude>,<Speed Over Ground>,<Course
-  // Over Ground>,<Fix Mode>,<Reserved1>,<HDOP>,<PDOP>,<VDOP>,<Reserved2>,<GNSS
-  // Satellites Used>,<GNSS Satellites Viewed>,<Glonass Satellites
-  // Used>,<Reserved3>,<C/N0 max>,<HPA>,<VPA> Example: +CGNSINF:
-  // 1,1,20231026102534.000, -1.234567, 31.123456, 1200.5, 0.00, , 1,
-  // , 1.0, 1.3, 0.9, , 8, 11, , , 42, ,
-
-  char *ptr = strstr(responseBuffer, "+CGNSINF: ");
-  if (!ptr)
-    return false;
-
-  ptr += 10; // Skip "+CGNSINF: "
-
-  // 1. GNSS run status
-  int runStatus = atoi(ptr);
-  ptr = strchr(ptr, ',');
-  if (!ptr)
-    return false;
-  ptr++;
-
-  // 2. Fix status
-  int fixStatus = atoi(ptr);
-  if (fixStatus == 0) {
-    gpsValid = false;
-    Serial.print(F("   (Module Raw: "));
-    Serial.print(responseBuffer);
-    Serial.println(F(")"));
-    return false;
-  }
-
-  ptr = strchr(ptr, ','); // Skip Fix status
-  if (!ptr)
-    return false;
-  ptr++;
-
-  ptr = strchr(ptr, ','); // Skip UTC date & time
-  if (!ptr)
-    return false;
-  ptr++;
-
-  // 4. Latitude
-  currentLat = atof(ptr);
-  ptr = strchr(ptr, ',');
-  if (!ptr)
-    return false;
-  ptr++;
-
-  // 5. Longitude
-  currentLng = atof(ptr);
-  ptr = strchr(ptr, ',');
-  if (!ptr)
-    return false;
-  ptr++;
-
-  // 6. Altitude
-  currentAlt = atof(ptr);
-  ptr = strchr(ptr, ',');
-  if (!ptr)
-    return false;
-  ptr++;
-
-  // 7. Speed
-  currentSpeed = atof(ptr);
-  ptr = strchr(ptr, ',');
-  if (!ptr)
-    return false;
-  ptr++;
-
-  // Skip Course, Fix Mode, etc. until Satellites Used
-  for (int i = 0; i < 7; i++) {
-    ptr = strchr(ptr, ',');
-    if (!ptr)
-      break;
-    ptr++;
-  }
-
-  if (ptr) {
-    currentSats = atoi(ptr);
-  }
-
-  gpsValid = (currentLat != 0.0 && currentLng != 0.0);
-  return gpsValid;
-}
-
-void sendLocationToServer() {
-  if (!gpsValid)
-    return;
-
-  Serial.println(F("\n📡 Sending location to server..."));
-
-  // Create JSON payload manually into payloadBuffer
-  char latStr[12], lngStr[12], altStr[10], speedStr[10];
-  dtostrf(currentLat, 0, 6, latStr);
-  dtostrf(currentLng, 0, 6, lngStr);
-  dtostrf(currentAlt, 0, 2, altStr);
-  dtostrf(currentSpeed, 0, 2, speedStr);
-
-  snprintf(payloadBuffer, sizeof(payloadBuffer),
-           "{\"device_id\":\"%s\",\"latitude\":%s,\"longitude\":%s,\"status\":"
-           "\"OK\",\"battery_level\":%d,\"altitude\":%s,\"speed\":%s,"
-           "\"satellites\":%d}",
-           DEVICE_ID, latStr, lngStr, batteryLevel, altStr, speedStr,
-           currentSats);
-
-  Serial.print(F("   JSON: "));
-  Serial.println(payloadBuffer);
-
-  // Send HTTP POST request
-  bool success = sendHTTPPost(payloadBuffer);
-
-  if (success) {
-    Serial.println(F("   ✓ Location sent successfully!"));
-    isOnline = true;
-    lastOnlineTime = millis();
-  } else {
-    Serial.println(F("   ✗ Failed to send location"));
-    isOnline = false;
+// ===================== SERIAL HELPERS =====================
+void flushSIM() {
+  while (sim808.available()) {
+    sim808.read();
+    delay(2);
   }
 }
 
-bool sendHTTPPost(const char *payload) {
-  // Initialize HTTP
-  sendATCommand("AT+HTTPTERM", "OK", 1000); // Terminate any previous session
-  delay(500);
-  sendATCommand("AT+HTTPINIT", "OK", 2000);
+bool sendCommand(const char *cmd, const char *expect, unsigned long timeout) {
+  flushSIM();
 
-  // Set HTTP parameters
-  sendATCommand("AT+HTTPPARA=\"CID\",1", "OK", 2000);
-
-  // Set URL
-  sim808.print(F("AT+HTTPPARA=\"URL\",\""));
-  sim808.print(SERVER_URL);
-  sim808.println(F("\""));
-  sendATCommandGetResponse("", 2000); // Read response into buffer
-
-  // Set content type
-  sendATCommand("AT+HTTPPARA=\"CONTENT\",\"application/json\"", "OK", 2000);
-
-  // Enable SSL and Redirects for Render HTTPS
-  sendATCommand("AT+HTTPPARA=\"REDIR\",1", "OK", 2000);
-  sendATCommand("AT+HTTPPARA=\"SSL\",1", "OK", 2000);
-
-  // Set data length
-  sim808.print(F("AT+HTTPDATA="));
-  sim808.print(strlen(payload));
-  sim808.println(F(",10000"));
-  delay(2000);
-
-  // Send data
-  sim808.println(payload);
-  delay(3000);
-
-  // Execute POST request
-  sim808.println("AT+HTTPACTION=1"); // 1 = POST
-  delay(5000);
-
-  // Read response
-  bool success = false;
-  unsigned long timeout = millis();
-  memset(responseBuffer, 0, sizeof(responseBuffer));
-  int idx = 0;
-
-  while (millis() - timeout < 30000) { // Increased timeout to 30s for Render
-    if (sim808.available()) {
-      char c = (char)sim808.read();
-      if (idx < sizeof(responseBuffer) - 1) {
-        responseBuffer[idx++] = c;
-        responseBuffer[idx] = '\0';
-      }
-    }
-
-    // Check for success codes
-    if (strstr(responseBuffer, "+HTTPACTION: 1,200") ||
-        strstr(responseBuffer, "+HTTPACTION: 1,201")) {
-      success = true;
-
-      // Check for geofence violation in response
-      if (strstr(responseBuffer, "geofence") ||
-          strstr(responseBuffer, "breach")) {
-        Serial.println(F("   ⚠ Geofence breach detected!"));
-        sendGeofenceSMS("Geofence");
-      }
-      break;
-    }
-
-    // Check for error codes
-    if (strstr(responseBuffer, "+HTTPACTION: 1,4")) {
-      Serial.println(F("   ✗ Server error"));
-      break;
-    }
+  if (cmd != NULL && strlen(cmd) > 0) {
+    sim808.println(cmd);
   }
-
-  // Terminate HTTP
-  sendATCommand("AT+HTTPTERM", "OK", 2000);
-
-  return success;
-}
-
-// ======================== SMS FUNCTIONS ========================
-
-void sendOfflineSMS() {
-  Serial.println(F("📱 Sending offline SMS alert..."));
-
-  snprintf(payloadBuffer, sizeof(payloadBuffer),
-           "ALERT: Tracker %s is OFFLINE since %lu minutes.", DEVICE_ID,
-           millis() / 60000);
-
-  if (gpsValid) {
-    char latStr[12], lngStr[12];
-    dtostrf(currentLat, 0, 6, latStr);
-    dtostrf(currentLng, 0, 6, lngStr);
-
-    strncat(payloadBuffer, " Map: https://maps.google.com/?q=",
-            sizeof(payloadBuffer) - strlen(payloadBuffer) - 1);
-    strncat(payloadBuffer, latStr,
-            sizeof(payloadBuffer) - strlen(payloadBuffer) - 1);
-    strncat(payloadBuffer, ",",
-            sizeof(payloadBuffer) - strlen(payloadBuffer) - 1);
-    strncat(payloadBuffer, lngStr,
-            sizeof(payloadBuffer) - strlen(payloadBuffer) - 1);
-  }
-
-  bool success = sendSMS(ALERT_PHONE, payloadBuffer);
-
-  if (success) {
-    Serial.println(F("   ✓ SMS sent successfully"));
-  } else {
-    Serial.println(F("   ✗ SMS failed"));
-  }
-}
-
-void sendGeofenceSMS(const char *geofenceName) {
-  Serial.println(F("📱 Sending geofence breach SMS..."));
-
-  snprintf(payloadBuffer, sizeof(payloadBuffer),
-           "ALERT: Animal left geofence '%s'.", geofenceName);
-
-  if (gpsValid) {
-    char latStr[12], lngStr[12];
-    dtostrf(currentLat, 0, 6, latStr);
-    dtostrf(currentLng, 0, 6, lngStr);
-
-    strncat(payloadBuffer, " Map: https://maps.google.com/?q=",
-            sizeof(payloadBuffer) - strlen(payloadBuffer) - 1);
-    strncat(payloadBuffer, latStr,
-            sizeof(payloadBuffer) - strlen(payloadBuffer) - 1);
-    strncat(payloadBuffer, ",",
-            sizeof(payloadBuffer) - strlen(payloadBuffer) - 1);
-    strncat(payloadBuffer, lngStr,
-            sizeof(payloadBuffer) - strlen(payloadBuffer) - 1);
-  }
-
-  sendSMS(ALERT_PHONE, payloadBuffer);
-}
-
-bool sendSMS(const char *phoneNumber, const char *message) {
-  Serial.print(F("   Sending SMS to "));
-  Serial.println(phoneNumber);
-
-  // Set SMS text mode
-  if (!sendATCommand("AT+CMGF=1", "OK", 2000)) {
-    Serial.println(F("   ✗ Failed to set Text Mode"));
-    return false;
-  }
-
-  // Set Character Set to GSM
-  sendATCommand("AT+CSCS=\"GSM\"", "OK", 1000);
-
-  // Start SMS command
-  sim808.print("AT+CMGS=\"");
-  sim808.print(phoneNumber);
-  sim808.println("\"");
-
-  // Wait for prompt '>'
-  unsigned long promptTimeout = millis();
-  bool promptReceived = false;
-  while (millis() - promptTimeout < 5000) {
-    if (sim808.available()) {
-      char c = sim808.read();
-      if (c == '>') {
-        promptReceived = true;
-        break;
-      }
-    }
-  }
-
-  if (!promptReceived) {
-    Serial.println(F("   ✗ Failed (No '>' prompt received)"));
-    // Try to escape
-    sim808.write(27); // ESC
-    return false;
-  }
-
-  // Send message
-  sim808.print(message);
-  delay(100);
-
-  // Send Ctrl+Z to send SMS
-  sim808.write(26);
-
-  // Wait for confirmation
-  unsigned long timeout = millis();
-  bool success = false;
-  memset(responseBuffer, 0, sizeof(responseBuffer));
-  int idx = 0;
-
-  while (millis() - timeout < 20000) { // Increased timeout to 20s
-    if (sim808.available()) {
-      char c = (char)sim808.read();
-      if (idx < sizeof(responseBuffer) - 1) {
-        responseBuffer[idx++] = c;
-        responseBuffer[idx] = '\0';
-      }
-    }
-
-    if (strstr(responseBuffer, "+CMGS")) {
-      success = true;
-      break;
-    }
-
-    if (strstr(responseBuffer, "ERROR")) {
-      Serial.print(F("   ✗ Error Response: "));
-      Serial.println(responseBuffer);
-      break;
-    }
-  }
-
-  if (success) {
-    Serial.println(F("   ✓ SMS Sent Successfully"));
-  } else {
-    Serial.println(F("   ✗ SMS Send Failed (Timeout or Error)"));
-  }
-
-  return success;
-}
-
-// ======================== COMMAND CHECKING ========================
-
-void checkForCommands() {
-  // Check for SMS commands
-  sim808.println("AT+CMGL=\"ALL\"");
-  delay(2000);
-
-  // Read response
-  memset(responseBuffer, 0, sizeof(responseBuffer));
-  int idx = 0;
-  unsigned long timeout = millis();
-
-  while (millis() - timeout < 5000) {
-    if (sim808.available()) {
-      char c = (char)sim808.read();
-      if (idx < sizeof(responseBuffer) - 1) {
-        responseBuffer[idx++] = c;
-        responseBuffer[idx] = '\0';
-      }
-    }
-  }
-
-  // Parse SMS for commands
-  if (strstr(responseBuffer, "BUZZER_ON") ||
-      strstr(responseBuffer, "ALARM_ON")) {
-    buzzerActive = true;
-    buzzerStartTime = millis();
-    Serial.println(F("🔔 Buzzer activated via SMS"));
-  }
-
-  if (strstr(responseBuffer, "BUZZER_OFF") ||
-      strstr(responseBuffer, "ALARM_OFF")) {
-    buzzerActive = false;
-    Serial.println(F("🔕 Buzzer deactivated via SMS"));
-  }
-
-  // Delete all read messages to free memory
-  if (strlen(responseBuffer) > 10) {
-    sendATCommand("AT+CMGD=1,4", "OK", 2000);
-  }
-}
-
-// ======================== BUZZER CONTROL ========================
-
-// Short beep when init succeeds (confirms buzzer works; also use SMS
-// "BUZZER_ON" to test)
-void playSuccessBeep() {
-  tone(BUZZER_PIN, 2000, 150);
-  delay(200);
-  tone(BUZZER_PIN, 2000, 150);
-  delay(100);
-  noTone(BUZZER_PIN);
-}
-
-void handleBuzzer() {
-  if (buzzerActive) {
-    // Auto-turn off after duration
-    if (millis() - buzzerStartTime >= BUZZER_DURATION) {
-      buzzerActive = false;
-      Serial.println(F("🔕 Buzzer auto-off"));
-    }
-
-    // Sound pattern: beep-beep-pause
-    unsigned long pattern = millis() % 3000;
-    if (pattern < 500 || (pattern >= 1000 && pattern < 1500)) {
-      tone(BUZZER_PIN, 2000); // 2kHz tone
-    } else {
-      noTone(BUZZER_PIN);
-    }
-  } else {
-    noTone(BUZZER_PIN);
-  }
-}
-
-// ======================== UTILITY FUNCTIONS ========================
-
-int getBatteryLevel() {
-  sim808.println("AT+CBC");
-  delay(1000);
 
   memset(responseBuffer, 0, sizeof(responseBuffer));
   int idx = 0;
-  unsigned long timeout = millis();
-
-  while (millis() - timeout < 2000) {
-    if (sim808.available()) {
-      char c = (char)sim808.read();
-      if (idx < sizeof(responseBuffer) - 1) {
-        responseBuffer[idx++] = c;
-        responseBuffer[idx] = '\0';
-      }
-    }
-  }
-
-  // Parse battery level from response: +CBC: 0,70,4.2V
-  char *cbcPtr = strstr(responseBuffer, "+CBC:");
-  if (cbcPtr) {
-    char *firstComma = strchr(cbcPtr, ',');
-    if (firstComma) {
-      char *secondComma = strchr(firstComma + 1, ',');
-      if (secondComma) {
-        int level = atoi(firstComma + 1);
-        if (level > 0 && level <= 100) {
-          return level;
-        }
-      }
-    }
-  }
-
-  return batteryLevel; // Return last known value if parse fails
-}
-
-// Flush SIM808 serial buffer so next command gets a clean response (avoids
-// leftover bytes from previous command - fixes "card not registered" when
-// basic test works but main tracker doesn't).
-void flushSIM808Buffer() {
   unsigned long start = millis();
-  while (millis() - start < 600) { // Increased to 600ms for stability
+  unsigned long lastByte = millis();
+
+  while (millis() - start < timeout) {
     while (sim808.available()) {
-      sim808.read();
-    }
-    delay(20);
-  }
-}
-
-bool sendATCommand(const char *command, const char *expectedResponse,
-                   unsigned long timeout) {
-  sim808.println(command);
-
-  memset(responseBuffer, 0, sizeof(responseBuffer));
-  int idx = 0;
-  unsigned long startTime = millis();
-
-  while (millis() - startTime < timeout) {
-    while (sim808.available()) {
-      char c = (char)sim808.read();
-      if (idx < sizeof(responseBuffer) - 1) {
+      char c = sim808.read();
+      if (idx < (int)sizeof(responseBuffer) - 1) {
         responseBuffer[idx++] = c;
         responseBuffer[idx] = '\0';
       }
+      lastByte = millis();
     }
-    if (strstr(responseBuffer, expectedResponse)) {
-      // Drain remainder so next command gets clean buffer
-      unsigned long drainStart = millis();
-      while (millis() - drainStart < 200) {
-        if (sim808.available())
-          sim808.read();
-      }
+
+    if (expect && strstr(responseBuffer, expect)) {
       return true;
     }
-    // Show heartbeat dots during long waits
-    if (timeout > 5000 && (millis() - startTime) % 2000 < 50) {
-      Serial.print(F("."));
+
+    // Only use the "quiet gap" early-exit when we're NOT waiting for a specific token.
+    // For responses like +HTTPACTION that can arrive many seconds later, we must
+    // wait the full timeout.
+    if (!expect && idx > 0 && (millis() - lastByte > 120)) {
+      break;
     }
+
+    delay(5);
+  }
+
+  if (expect == NULL) return idx > 0;
+  return strstr(responseBuffer, expect) != NULL;
+}
+
+bool setAPN() {
+  flushSIM();
+
+  sim808.print(F("AT+SAPBR=3,1,\"APN\",\""));
+  sim808.print(APN);
+  sim808.println(F("\""));
+
+  memset(responseBuffer, 0, sizeof(responseBuffer));
+  int idx = 0;
+  unsigned long start = millis();
+  unsigned long lastByte = millis();
+
+  while (millis() - start < 4000) {
+    while (sim808.available()) {
+      char c = sim808.read();
+      if (idx < (int)sizeof(responseBuffer) - 1) {
+        responseBuffer[idx++] = c;
+        responseBuffer[idx] = '\0';
+      }
+      lastByte = millis();
+    }
+
+    if (strstr(responseBuffer, "OK")) return true;
+    if (strstr(responseBuffer, "ERROR")) return false;
+    if (idx > 0 && (millis() - lastByte > 120)) break;
+
+    delay(5);
+  }
+
+  return strstr(responseBuffer, "OK") != NULL;
+}
+
+bool setURL(const char *url) {
+  flushSIM();
+
+  sim808.print(F("AT+HTTPPARA=\"URL\",\""));
+  sim808.print(url);
+  sim808.println(F("\""));
+
+  memset(responseBuffer, 0, sizeof(responseBuffer));
+  int idx = 0;
+  unsigned long start = millis();
+  unsigned long lastByte = millis();
+
+  while (millis() - start < 5000) {
+    while (sim808.available()) {
+      char c = sim808.read();
+      if (idx < (int)sizeof(responseBuffer) - 1) {
+        responseBuffer[idx++] = c;
+        responseBuffer[idx] = '\0';
+      }
+      lastByte = millis();
+    }
+
+    if (strstr(responseBuffer, "OK")) return true;
+    if (strstr(responseBuffer, "ERROR")) return false;
+    if (idx > 0 && (millis() - lastByte > 120)) break;
+
+    delay(5);
+  }
+
+  return strstr(responseBuffer, "OK") != NULL;
+}
+
+// Wait for a full +HTTPACTION line: +HTTPACTION: 1,<status>,<datalen>
+// We can't stop as soon as the prefix appears because SIM808 often streams the
+// rest of the line a moment later (e.g. "6" then "03,0"), which breaks parsing.
+bool waitForHTTPActionLine(unsigned long timeout, int *outStatus, long *outLen) {
+  memset(responseBuffer, 0, sizeof(responseBuffer));
+  int idx = 0;
+  unsigned long start = millis();
+  unsigned long lastByte = millis();
+  bool seenPrefix = false;
+
+  while (millis() - start < timeout) {
+    while (sim808.available()) {
+      char c = sim808.read();
+      if (idx < (int)sizeof(responseBuffer) - 1) {
+        responseBuffer[idx++] = c;
+        responseBuffer[idx] = '\0';
+      }
+      lastByte = millis();
+    }
+
+    char *p = strstr(responseBuffer, "+HTTPACTION: 1,");
+    if (p) {
+      seenPrefix = true;
+      // Require at least two commas after the prefix so we have full "<status>,<len>"
+      char *comma1 = strchr(p, ',');
+      if (comma1) {
+        char *comma2 = strchr(comma1 + 1, ',');
+        if (comma2) {
+          int status = 0;
+          long len = 0;
+          // Parse from the prefix
+          if (sscanf(p, "+HTTPACTION: 1,%d,%ld", &status, &len) >= 1) {
+            if (outStatus) *outStatus = status;
+            if (outLen) *outLen = len;
+            return true;
+          }
+        }
+      }
+    }
+
+    // If we saw the prefix but nothing new arrives for a bit, keep waiting;
+    // otherwise we'd cut the line in half.
+    if (!seenPrefix && idx > 0 && (millis() - lastByte > 500)) {
+      // some other response came back; keep waiting for HTTPACTION
+    }
+
     delay(10);
   }
 
   return false;
 }
 
-void sendATCommandGetResponse(const char *command, unsigned long timeout) {
-  sim808.println(command);
+// ===================== SMS =====================
+bool sendSMS(const char *phone, const char *message) {
+  Serial.println(F("SEND SMS"));
+
+  if (!sendCommand("AT+CMGF=1", "OK", 3000)) {
+    Serial.println(F("CMGF FAIL"));
+    return false;
+  }
+
+  if (!sendCommand("AT+CSCS=\"GSM\"", "OK", 2000)) {
+    Serial.println(F("CSCS FAIL"));
+    return false;
+  }
+
+  flushSIM();
+  sim808.print(F("AT+CMGS=\""));
+  sim808.print(phone);
+  sim808.println(F("\""));
+
+  unsigned long start = millis();
+  bool gotPrompt = false;
+  while (millis() - start < 5000) {
+    if (sim808.available()) {
+      char c = sim808.read();
+      if (c == '>') {
+        gotPrompt = true;
+        break;
+      }
+    }
+  }
+
+  if (!gotPrompt) {
+    Serial.println(F("NO SMS PROMPT"));
+    return false;
+  }
+
+  sim808.print(message);
+  sim808.write(26); // Ctrl+Z
 
   memset(responseBuffer, 0, sizeof(responseBuffer));
   int idx = 0;
-  unsigned long startTime = millis();
-
-  while (millis() - startTime < timeout) {
+  start = millis();
+  while (millis() - start < 20000) {
     while (sim808.available()) {
-      char c = (char)sim808.read();
-      if (idx < sizeof(responseBuffer) - 1) {
+      char c = sim808.read();
+      if (idx < (int)sizeof(responseBuffer) - 1) {
         responseBuffer[idx++] = c;
         responseBuffer[idx] = '\0';
       }
     }
-    // Let SoftwareSerial buffer fill
+    if (strstr(responseBuffer, "+CMGS")) {
+      Serial.println(F("SMS OK"));
+      return true;
+    }
+    if (strstr(responseBuffer, "ERROR")) {
+      Serial.println(F("SMS ERROR"));
+      Serial.println(responseBuffer);
+      return false;
+    }
     delay(20);
+  }
+  Serial.println(F("SMS TIMEOUT"));
+  return false;
+}
+
+void checkSMSCommands() {
+  // Ensure text mode before reading
+  sendCommand("AT+CMGF=1", "OK", 2000);
+
+  flushSIM();
+  sim808.println("AT+CMGL=\"ALL\"");
+
+  memset(responseBuffer, 0, sizeof(responseBuffer));
+  int idx = 0;
+  unsigned long start = millis();
+
+  // Read everything into responseBuffer for up to 5 seconds
+  while (millis() - start < 5000) {
+    while (sim808.available()) {
+      char c = sim808.read();
+      if (idx < (int)sizeof(responseBuffer) - 1) {
+        responseBuffer[idx++] = c;
+        responseBuffer[idx] = '\0';
+      }
+    }
+    // small delay to batch bytes
+    delay(10);
+  }
+
+  Serial.println(F("CMGL RAW RESP:"));
+  Serial.println(responseBuffer);
+
+  // Now just search the text for commands
+  if (strstr(responseBuffer, "BUZZER_ON") || strstr(responseBuffer, "ALARM_ON")) {
+    buzzerActive = true;
+    buzzerStart = millis();
+    Serial.println(F("BUZZER ON CMD"));
+  }
+
+  if (strstr(responseBuffer, "BUZZER_OFF") || strstr(responseBuffer, "ALARM_OFF")) {
+    buzzerActive = false;
+    Serial.println(F("BUZZER OFF CMD"));
+  }
+
+  // Clear all SMS so memory does not fill up
+  sendCommand("AT+CMGD=1,4", "OK", 3000);  // delete all messages [web:36]
+}
+// ===================== BUZZER / GEOFENCE HELPERS =====================
+void handleBuzzer() {
+  if (buzzerActive) {
+    if (millis() - buzzerStart >= BUZZER_DURATION_MS) {
+      buzzerActive = false;
+      digitalWrite(BUZZER_PIN, LOW);
+      Serial.println(F("BUZZER AUTO OFF"));
+      return;
+    }
+    // simple on/off; you can change this to a pattern if you like
+    digitalWrite(BUZZER_PIN, HIGH);
+    } else {
+    digitalWrite(BUZZER_PIN, LOW);
   }
 }
 
-// Helper to check available RAM on Arduino Uno
-int freeMemory() {
-  extern int __heap_start, *__brkval;
-  int v;
-  return (int)&v - (__brkval == 0 ? (int)&__heap_start : (int)__brkval);
+double haversineMeters(double lat1, double lon1, double lat2, double lon2) {
+  const double R = 6371000.0; // earth radius in meters
+  double p1 = lat1 * PI / 180.0;
+  double p2 = lat2 * PI / 180.0;
+  double dp = (lat2 - lat1) * PI / 180.0;
+  double dl = (lon2 - lon1) * PI / 180.0;
+
+  double a = sin(dp / 2) * sin(dp / 2) +
+             cos(p1) * cos(p2) *
+             sin(dl / 2) * sin(dl / 2);
+  double c = 2 * atan2(sqrt(a), sqrt(1 - a));
+  return R * c;
+}
+
+void checkGeofenceAndAlert() {
+  if (!gpsValid) return;
+
+  double dist = haversineMeters(currentLat, currentLng, GEOFENCE_LAT, GEOFENCE_LNG);
+  Serial.print(F("GEOFENCE DIST (m): "));
+  Serial.println(dist, 1);
+
+  if (dist > GEOFENCE_RADIUS_M) {
+    // Outside 10 m radius
+    // Send immediately the first time (lastGeofenceSMS == 0),
+    // then at most once per cooldown period.
+    if (lastGeofenceSMS == 0 || millis() - lastGeofenceSMS > GEOFENCE_SMS_COOLDOWN_MS) {
+      lastGeofenceSMS = millis();
+
+      char msg[200];
+      snprintf(msg, sizeof(msg),
+               "ALERT: Animal %s left kraal (%.1fm away). Maps: https://maps.google.com/?q=%.6f,%.6f",
+               DEVICE_ID,
+               dist,
+               currentLat,
+               currentLng);
+      sendSMS(ALERT_PHONE, msg);
+    }
+  }
+}
+
+// ===================== MODEM INIT =====================
+bool initModem() {
+  Serial.println(F("INIT"));
+
+  // Basic checks
+  if (!sendCommand("AT", "OK", 2000)) {
+    Serial.println(F("AT FAIL"));
+    Serial.println(responseBuffer);
+    return false;
+  }
+
+  if (!sendCommand("ATE0", "OK", 2000)) {
+    Serial.println(F("ATE0 FAIL"));
+    Serial.println(responseBuffer);
+    return false;
+  }
+
+  if (!sendCommand("AT+CPIN?", "READY", 3000)) {
+    Serial.println(F("SIM FAIL"));
+    Serial.println(responseBuffer);
+    return false;
+  }
+
+  if (!sendCommand("AT+CREG?", "OK", 3000)) {
+    Serial.println(F("CREG FAIL"));
+    Serial.println(responseBuffer);
+    return false;
+  }
+
+  int n, stat;
+  if (sscanf(responseBuffer, "+CREG: %d,%d", &n, &stat) == 2) {
+    if (stat == 1 || stat == 5) {
+      Serial.println("NETWORK REGISTERED");
+    } else {
+      Serial.println("NOT REGISTERED");
+      return false;
+    }
+  }
+
+  if (!sendCommand("AT+CGATT?", "OK", 3000)) {
+    Serial.println(F("CGATT? FAIL"));
+    Serial.println(responseBuffer);
+    return false;
+  }
+
+  if (!strstr(responseBuffer, "+CGATT: 1")) {
+    if (!sendCommand("AT+CGATT=1", "OK", 10000)) {
+      Serial.println(F("CGATT=1 FAIL"));
+      Serial.println(responseBuffer);
+      return false;
+    }
+  }
+
+  // -------- GPRS BEARER SETUP (HTTP) --------
+
+  // 1) Set bearer type = GPRS
+  if (!sendCommand("AT+SAPBR=3,1,\"CONTYPE\",\"GPRS\"", "OK", 5000)) {
+    Serial.println(F("CONTYPE FAIL"));
+    Serial.println(responseBuffer);
+    return false;
+  }
+
+  // 2) Set APN
+  if (!setAPN()) {
+    Serial.println(F("APN FAIL"));
+    Serial.println(responseBuffer);
+    return false;
+  }
+
+  // (Optional) If Econet needs user/pass, uncomment these:
+  // sendCommand("AT+SAPBR=3,1,\"USER\",\"econet\"", "OK", 5000);
+  // sendCommand("AT+SAPBR=3,1,\"PWD\",\"econet\"", "OK", 5000);
+
+  // 3) Open bearer
+  if (!sendCommand("AT+SAPBR=1,1", "OK", 15000)) {
+  Serial.println(F("SAPBR OPEN GOT ERROR, WILL CHECK STATUS"));
+  Serial.println(responseBuffer);
+  // Do NOT return false here; go on to check status
+}
+
+  delay(5000); 
+
+
+  if (!sendCommand("AT+SAPBR=2,1", "OK", 5000)) {
+  Serial.println(F("SAPBR STATUS FAIL"));
+  Serial.println(responseBuffer);
+  return false;
+}
+
+Serial.print(F("SAPBR RESP: "));
+Serial.println(responseBuffer);
+// Optional: verify it really says +SAPBR: 1,1,"..."
+if (!strstr(responseBuffer, "+SAPBR: 1,1")) {
+  Serial.println(F("NO ACTIVE BEARER"));
+  return false;
+}
+
+  // -------- GPS POWER --------
+  if (!sendCommand("AT+CGNSPWR=1", "OK", 3000)) {
+    Serial.println(F("GPS PWR FAIL"));
+    Serial.println(responseBuffer);
+    return false;
+  }
+  sendCommand("AT+CMGF=1", "OK", 3000);
+
+  // DNS is a common cause of HTTPACTION 603 on some APNs.
+  // Configure DNS for the SAPBR bearer and reopen bearer so settings take effect.
+  configureDNS();
+  hardResetBearer();
+
+  Serial.println(F("MODEM OK"));
+  return true;
+}
+
+// ===================== GPS =====================
+bool getGPS() {
+  if (!sendCommand("AT+CGNSINF", "OK", 3000)) {
+    gpsValid = false;
+    return false;
+  }
+
+  char *ptr = strstr(responseBuffer, "+CGNSINF: ");
+  if (!ptr) {
+    gpsValid = false;
+    return false;
+  }
+
+  ptr += 10;
+
+  int runStatus = atoi(ptr);
+  ptr = strchr(ptr, ',');
+  if (!ptr) return false;
+  ptr++;
+
+  int fixStatus = atoi(ptr);
+  ptr = strchr(ptr, ',');
+  if (!ptr) return false;
+  ptr++;
+
+  // Skip UTC time
+  ptr = strchr(ptr, ',');
+  if (!ptr) return false;
+  ptr++;
+
+  // Latitude
+  currentLat = atof(ptr);
+  ptr = strchr(ptr, ',');
+  if (!ptr) return false;
+  ptr++;
+
+  // Longitude
+  currentLng = atof(ptr);
+  ptr = strchr(ptr, ',');
+  if (!ptr) return false;
+  ptr++;
+
+  // Skip altitude
+  ptr = strchr(ptr, ',');
+  if (!ptr) return false;
+  ptr++;
+
+  // Speed
+  currentSpeed = atof(ptr);
+  ptr = strchr(ptr, ',');
+  if (!ptr) return false;
+  ptr++;
+
+  // Heading / course
+  currentHeading = atof(ptr);
+
+  gpsValid = (runStatus == 1 && fixStatus == 1 &&
+              currentLat != 0.0 && currentLng != 0.0);
+
+  return gpsValid;
+}
+
+// ===================== BATTERY =====================
+int getBatteryLevel() {
+  if (!sendCommand("AT+CBC", "OK", 2000)) {
+    return batteryLevel;
+  }
+
+  char *cbcPtr = strstr(responseBuffer, "+CBC:");
+  if (!cbcPtr) return batteryLevel;
+
+  char *firstComma = strchr(cbcPtr, ',');
+  if (!firstComma) return batteryLevel;
+
+  int level = atoi(firstComma + 1);
+  if (level >= 0 && level <= 100) return level;
+
+  return batteryLevel;
+}
+
+// ===================== HTTP POST =====================
+bool postToThingsBoard(const char *payload) {
+  // Retry the entire HTTP transaction once after bearer reset on timeout/601.
+  for (int attempt = 0; attempt < 2; attempt++) {
+    int httpCode = 0;
+
+    // Ensure bearer is up before HTTPINIT
+    if (!ensureHTTPBearer()) {
+      Serial.println(F("BEARER DOWN"));
+      if (attempt == 0) {
+        // Try a hard bearer reset once
+        sendCommand("AT+SAPBR=0,1", "OK", 10000);
+        delay(1500);
+        sendCommand("AT+SAPBR=1,1", "OK", 20000);
+        delay(3000);
+        continue;
+      }
+      return false;
+    }
+
+    Serial.println(F("P1"));
+    sendCommand("AT+HTTPTERM", "OK", 2000);
+    delay(300);
+
+    // HTTPINIT can sporadically fail; retry a few times
+    Serial.println(F("P2"));
+    bool httpInitOk = false;
+    for (int i = 0; i < 3; i++) {
+      if (sendCommand("AT+HTTPINIT", "OK", 8000)) {
+        httpInitOk = true;
+        break;
+      }
+      delay(500);
+      sendCommand("AT+HTTPTERM", "OK", 2000);
+      delay(300);
+    }
+    if (!httpInitOk) {
+      Serial.println(F("HTTPINIT FAIL"));
+      Serial.println(responseBuffer);
+      if (attempt == 0) {
+        // Reset bearer and retry whole transaction
+        sendCommand("AT+SAPBR=0,1", "OK", 10000);
+        delay(1500);
+        sendCommand("AT+SAPBR=1,1", "OK", 20000);
+        delay(3000);
+        continue;
+      }
+      return false;
+    }
+
+    Serial.println(F("P3"));
+    if (!sendCommand("AT+HTTPPARA=\"CID\",1", "OK", 3000)) {
+      Serial.println(F("CID FAIL"));
+      Serial.println(responseBuffer);
+      sendCommand("AT+HTTPTERM", "OK", 2000);
+      if (attempt == 0) continue;
+      return false;
+    }
+
+    Serial.println(F("P5"));
+    const char *urlToUse = TB_URL;
+    // If DNS is broken on this modem/APN, HTTPACTION returns 603.
+    // We can bypass DNS by using the IP-based URL if provided.
+    if (attempt > 0 && TB_URL && TB_URL[0] != '\0') {      urlToUse = TB_URL;
+      Serial.println(F("USING TB_URL_IP (DNS bypass)"));
+    } else if (attempt > 0 && (!TB_URL || TB_URL[0] == '\0')) {
+        Serial.println(F("TIP: set TB_URL_IP to bypass DNS/603"));
+    }
+
+    if (!setURL(urlToUse)) {
+      Serial.println(F("URL FAIL"));
+      Serial.println(responseBuffer);
+      sendCommand("AT+HTTPTERM", "OK", 2000);
+      if (attempt == 0) continue;
+      return false;
+    }
+
+    Serial.println(F("P6"));
+    if (!sendCommand("AT+HTTPPARA=\"CONTENT\",\"application/json\"", "OK", 3000)) {
+      Serial.println(F("CONTENT FAIL"));
+      Serial.println(responseBuffer);
+      sendCommand("AT+HTTPTERM", "OK", 2000);
+      if (attempt == 0) continue;
+      return false;
+    }
+
+    Serial.print(F("JSON: "));
+    Serial.println(payload);
+
+    Serial.println(F("P7"));
+    flushSIM();
+    sim808.print(F("AT+HTTPDATA="));
+    sim808.print(strlen(payload));
+    sim808.println(F(",10000"));
+
+    memset(responseBuffer, 0, sizeof(responseBuffer));
+    int idx = 0;
+  unsigned long start = millis();
+    while (millis() - start < 12000) {
+    while (sim808.available()) {
+        char c = sim808.read();
+        if (idx < (int)sizeof(responseBuffer) - 1) {
+          responseBuffer[idx++] = c;
+          responseBuffer[idx] = '\0';
+        }
+      }
+      if (strstr(responseBuffer, "DOWNLOAD")) break;
+      if (strstr(responseBuffer, "ERROR")) break;
+      delay(5);
+    }
+    if (!strstr(responseBuffer, "DOWNLOAD")) {
+      Serial.println(F("HTTPDATA FAIL"));
+      Serial.println(responseBuffer);
+      sendCommand("AT+HTTPTERM", "OK", 2000);
+      if (attempt == 0) continue;
+      return false;
+    }
+
+    Serial.println(F("P8"));
+    sim808.print(payload);
+    if (!sendCommand("", "OK", 15000)) {
+      Serial.println(F("PAYLOAD FAIL"));
+      Serial.println(responseBuffer);
+      sendCommand("AT+HTTPTERM", "OK", 2000);
+      if (attempt == 0) continue;
+      return false;
+    }
+
+    Serial.println(F("P9"));
+    flushSIM();
+    sim808.println(F("AT+HTTPACTION=1"));
+
+    // Wait longer for full +HTTPACTION line; weak networks can take >30s
+    int actionStatus = 0;
+    long actionLen = 0;
+    if (!waitForHTTPActionLine(90000, &actionStatus, &actionLen)) {
+      Serial.println(F("NO HTTPACTION"));
+      Serial.println(responseBuffer);
+      sendCommand("AT+HTTPTERM", "OK", 2000);
+      // Reset bearer once and retry
+      if (attempt == 0) {
+        sendCommand("AT+SAPBR=0,1", "OK", 10000);
+        delay(1500);
+        sendCommand("AT+SAPBR=1,1", "OK", 20000);
+        delay(3000);
+        continue;
+      }
+      return false;
+    }
+
+    Serial.print(F("HTTPACTION RESP: "));
+    Serial.println(responseBuffer);
+
+    httpCode = actionStatus;
+
+    Serial.print(F("HTTP CODE: "));
+    Serial.println(httpCode);
+
+    Serial.println(F("P10"));
+    sim808.println(F("AT+HTTPREAD"));
+    delay(1000);
+    while (sim808.available()) {
+      Serial.write(sim808.read());
+    }
+
+    sendCommand("AT+HTTPTERM", "OK", 2000);
+
+    if (httpCode == 200 || httpCode == 201) {
+      return true;
+    }
+
+    // On 601/603, reset bearer and retry once.
+    // If DNS is broken (603), the second attempt can use TB_URL_IP if set.
+    if ((httpCode == 601 || httpCode == 603) && attempt == 0) {
+      hardResetBearer();
+      continue;
+    }
+
+    return false;
+  }
+  return false;
+}
+
+bool ensureHTTPBearer() {
+  // Quick check bearer status
+  if (!sendCommand("AT+SAPBR=2,1", "OK", 5000)) {
+    return false;
+  }
+  if (strstr(responseBuffer, "+SAPBR: 1,1")) {
+    return true; // already up
+  }
+
+  // Try reopen
+  if (!sendCommand("AT+SAPBR=1,1", "OK", 15000)) {
+    return false;
+  }
+  delay(3000);
+  return sendCommand("AT+SAPBR=2,1", "OK", 5000) &&
+         strstr(responseBuffer, "+SAPBR: 1,1");
+}
+
+
+// ===================== OFFLINE SMS SUPPORT =====================
+int consecutivePostFails = 0;
+unsigned long lastOfflineSMS = 0;
+const unsigned long OFFLINE_SMS_COOLDOWN_MS = 30UL * 60UL * 1000UL; // 30 minutes
+const int OFFLINE_FAIL_THRESHOLD = 3; // number of consecutive HTTP failures before SMS
+
+// ===================== SETUP =====================
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+
+  sim808.begin(9600, SERIAL_8N1, MODEM_RX_PIN, MODEM_TX_PIN);
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, LOW);
+
+  // TEST: make buzzer beep for 2 seconds at boot
+  digitalWrite(BUZZER_PIN, HIGH);
+  delay(2000);
+  digitalWrite(BUZZER_PIN, LOW);
+
+  Serial.println("BOOT");
+  delay(10000);
+
+  if (!initModem()) {
+    Serial.println("INIT FAIL");
+    return;
+  }
+
+  Serial.println("READY");
+}// ===================== LOOP =====================
+void loop() {
+  // Always keep buzzer and SMS commands responsive
+  handleBuzzer();
+
+  if (millis() - lastSMSCheck > 15000UL) { // check inbox every 15s
+    lastSMSCheck = millis();
+    checkSMSCommands();
+  }
+
+  if (millis() - lastSend < SEND_INTERVAL_MS) {
+    return;
+  }
+
+  lastSend = millis();
+
+  Serial.println(F("--- CYCLE ---"));
+
+  if (!getGPS()) {
+    Serial.println(F("NO GPS FIX"));
+    return;
+  }
+
+  batteryLevel = getBatteryLevel();
+
+  Serial.print(F("LAT: "));
+  Serial.println(currentLat, 6);
+  Serial.print(F("LON: "));
+  Serial.println(currentLng, 6);
+  Serial.print(F("SPD: "));
+  Serial.println(currentSpeed, 2);
+  Serial.print(F("HDG: "));
+  Serial.println((int)currentHeading);
+  Serial.print(F("BAT: "));
+  Serial.println(batteryLevel);
+
+  // Check geofence and send SMS if needed
+  checkGeofenceAndAlert();
+
+  snprintf(payloadBuffer, sizeof(payloadBuffer),
+           "{\"device_id\":\"%s\",\"latitude\":%.6f,\"longitude\":%.6f,\"speed\":%.1f,\"heading\":%d,\"battery_level\":%d}",
+           DEVICE_ID,
+           currentLat,
+           currentLng,
+           currentSpeed,
+           (int)currentHeading,
+           batteryLevel);
+
+  if (postToThingsBoard(payloadBuffer)) {
+    Serial.println(F("POST OK"));
+    consecutivePostFails = 0;
+  } else {
+    Serial.println(F("POST FAIL"));
+    consecutivePostFails++;
+
+    if (consecutivePostFails >= OFFLINE_FAIL_THRESHOLD) {
+      if (lastOfflineSMS == 0 || millis() - lastOfflineSMS > OFFLINE_SMS_COOLDOWN_MS) {
+        lastOfflineSMS = millis();
+        char msg[200];
+        snprintf(msg, sizeof(msg),
+                 "ALERT: Tracker %s seems OFFLINE (HTTP errors). Last known at https://maps.google.com/?q=%.6f,%.6f",
+                 DEVICE_ID,
+                 currentLat,
+                 currentLng);
+        sendSMS(ALERT_PHONE, msg);
+      }
+    }
+  }
 }

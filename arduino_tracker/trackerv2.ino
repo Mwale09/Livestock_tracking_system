@@ -9,16 +9,22 @@ HardwareSerial sim808(2);
 // ===================== SETTINGS =====================
 const char *APN = "econet.net";
 const char *DEVICE_ID = "GPS001";
-const char *TB_URL = "http://eu.thingsboard.cloud/api/v1/uveeyeqoxudmdmgu3267/telemetry";
-const char *ALERT_PHONE = "+263773071677"; // change to your number
+//const char *TB_URL = "http://eu.thingsboard.cloud/api/v1/uveeyeqoxudmdmgu3267/telemetry";
+// Fallback when the APN/modem can't do DNS (HTTPACTION 603).
+// Set this to the resolved IP of eu.thingsboard.cloud (same path), e.g.
+// "http://<IP>/api/v1/<TOKEN>/telemetry"
+// Leave empty to disable IP fallback.
+//const char *TB_URL_IP = "";const char *TB_URL_IP = "http://3.69.110.78/api/v1/uveeyeqoxudmdmgu3267/telemetry";
+const char *TB_URL = "http://3.69.110.78/api/v1/uveeyeqoxudmdmgu3267/telemetry";
+const char *ALERT_PHONE = "+263714265736"; // change to your number
 
-const unsigned long SEND_INTERVAL_MS    = 15000UL; // 15 seconds
+const unsigned long SEND_INTERVAL_MS    = 60000UL; // 60 seconds
 const unsigned long BUZZER_DURATION_MS  = 10000UL; // 10 seconds
 const unsigned long GEOFENCE_SMS_COOLDOWN_MS = 600000UL; // 10 minutes
 
 // Geofence around your kraal
-const double GEOFENCE_LAT      = -20.167931;
-const double GEOFENCE_LNG      =  28.641630;
+const double GEOFENCE_LAT      = -20.168522;
+const double GEOFENCE_LNG      =  28.643799;
 const double GEOFENCE_RADIUS_M = 10.0; // 10 meters
 
 // ===================== BUFFERS =====================
@@ -38,6 +44,27 @@ unsigned long lastGeofenceSMS = 0;
 
 bool buzzerActive = false;
 unsigned long buzzerStart = 0;
+
+// ===================== NETWORK / DNS HELPERS =====================
+bool configureDNS() {
+  // Prefer SAPBR DNS parameters; these are supported on SIM800/SIM808 when using SAPBR bearer.
+  // (AT+CDNSCFG is not available on some firmwares -> ERROR.)
+  bool ok1 = sendCommand("AT+SAPBR=3,1,\"DNS1\",\"8.8.8.8\"", "OK", 5000);
+  bool ok2 = sendCommand("AT+SAPBR=3,1,\"DNS2\",\"1.1.1.1\"", "OK", 5000);
+  if (!ok1 || !ok2) {
+    Serial.println(F("DNSCFG FAIL"));
+    Serial.println(responseBuffer);
+    return false;
+  }
+  return true;
+}
+
+void hardResetBearer() {
+  sendCommand("AT+SAPBR=0,1", "OK", 15000);
+  delay(1500);
+  sendCommand("AT+SAPBR=1,1", "OK", 25000);
+  delay(4000);
+}
 
 // ===================== SERIAL HELPERS =====================
 void flushSIM() {
@@ -73,7 +100,10 @@ bool sendCommand(const char *cmd, const char *expect, unsigned long timeout) {
       return true;
     }
 
-    if (idx > 0 && (millis() - lastByte > 120)) {
+    // Only use the "quiet gap" early-exit when we're NOT waiting for a specific token.
+    // For responses like +HTTPACTION that can arrive many seconds later, we must
+    // wait the full timeout.
+    if (!expect && idx > 0 && (millis() - lastByte > 120)) {
       break;
     }
 
@@ -146,6 +176,58 @@ bool setURL(const char *url) {
   }
 
   return strstr(responseBuffer, "OK") != NULL;
+}
+
+// Wait for a full +HTTPACTION line: +HTTPACTION: 1,<status>,<datalen>
+// We can't stop as soon as the prefix appears because SIM808 often streams the
+// rest of the line a moment later (e.g. "6" then "03,0"), which breaks parsing.
+bool waitForHTTPActionLine(unsigned long timeout, int *outStatus, long *outLen) {
+  memset(responseBuffer, 0, sizeof(responseBuffer));
+  int idx = 0;
+  unsigned long start = millis();
+  unsigned long lastByte = millis();
+  bool seenPrefix = false;
+
+  while (millis() - start < timeout) {
+    while (sim808.available()) {
+      char c = sim808.read();
+      if (idx < (int)sizeof(responseBuffer) - 1) {
+        responseBuffer[idx++] = c;
+        responseBuffer[idx] = '\0';
+      }
+      lastByte = millis();
+    }
+
+    char *p = strstr(responseBuffer, "+HTTPACTION: 1,");
+    if (p) {
+      seenPrefix = true;
+      // Require at least two commas after the prefix so we have full "<status>,<len>"
+      char *comma1 = strchr(p, ',');
+      if (comma1) {
+        char *comma2 = strchr(comma1 + 1, ',');
+        if (comma2) {
+          int status = 0;
+          long len = 0;
+          // Parse from the prefix
+          if (sscanf(p, "+HTTPACTION: 1,%d,%ld", &status, &len) >= 1) {
+            if (outStatus) *outStatus = status;
+            if (outLen) *outLen = len;
+            return true;
+          }
+        }
+      }
+    }
+
+    // If we saw the prefix but nothing new arrives for a bit, keep waiting;
+    // otherwise we'd cut the line in half.
+    if (!seenPrefix && idx > 0 && (millis() - lastByte > 500)) {
+      // some other response came back; keep waiting for HTTPACTION
+    }
+
+    delay(10);
+  }
+
+  return false;
 }
 
 // ===================== SMS =====================
@@ -416,6 +498,11 @@ if (!strstr(responseBuffer, "+SAPBR: 1,1")) {
   }
   sendCommand("AT+CMGF=1", "OK", 3000);
 
+  // DNS is a common cause of HTTPACTION 603 on some APNs.
+  // Configure DNS for the SAPBR bearer and reopen bearer so settings take effect.
+  configureDNS();
+  hardResetBearer();
+
   Serial.println(F("MODEM OK"));
   return true;
 }
@@ -502,143 +589,205 @@ int getBatteryLevel() {
 
 // ===================== HTTP POST =====================
 bool postToThingsBoard(const char *payload) {
-  int httpCode = 0;
+  // Retry the entire HTTP transaction once after bearer reset on timeout/601.
+  for (int attempt = 0; attempt < 2; attempt++) {
+    int httpCode = 0;
 
-  Serial.println(F("P1"));
-  sendCommand("AT+HTTPTERM", "OK", 2000);
-  delay(200);
-
-  Serial.println(F("P2"));
-  if (!sendCommand("AT+HTTPINIT", "OK", 5000)) {
-    Serial.println(F("HTTPINIT FAIL"));
-    Serial.println(responseBuffer);
-    return false;
-  }
-
-  Serial.println(F("P3"));
-  if (!sendCommand("AT+HTTPPARA=\"CID\",1", "OK", 3000)) {
-    Serial.println(F("CID FAIL"));
-    Serial.println(responseBuffer);
-    sendCommand("AT+HTTPTERM", "OK", 2000);
-    return false;
-  }
-
-  Serial.println(F("P4 SKIP"));
-
-  Serial.println(F("P5"));
-  if (!setURL(TB_URL)) {
-    Serial.println(F("URL FAIL"));
-    Serial.println(responseBuffer);
-    sendCommand("AT+HTTPTERM", "OK", 2000);
-    return false;
-  }
-
-  Serial.println(F("P6"));
-  if (!sendCommand("AT+HTTPPARA=\"CONTENT\",\"application/json\"", "OK", 3000)) {
-    Serial.println(F("CONTENT FAIL"));
-    Serial.println(responseBuffer);
-    sendCommand("AT+HTTPTERM", "OK", 2000);
-    return false;
-  }
-
-  Serial.print(F("JSON: "));
-  Serial.println(payload);
-
-  Serial.println(F("P7"));
-  flushSIM();
-  sim808.print(F("AT+HTTPDATA="));
-  sim808.print(strlen(payload));
-  sim808.println(F(",10000"));
-
-  memset(responseBuffer, 0, sizeof(responseBuffer));
-  int idx = 0;
-  unsigned long start = millis();
-
-  while (millis() - start < 6000) {
-    while (sim808.available()) {
-      char c = sim808.read();
-      if (idx < (int)sizeof(responseBuffer) - 1) {
-        responseBuffer[idx++] = c;
-        responseBuffer[idx] = '\0';
+    // Ensure bearer is up before HTTPINIT
+    if (!ensureHTTPBearer()) {
+      Serial.println(F("BEARER DOWN"));
+      if (attempt == 0) {
+        // Try a hard bearer reset once
+        sendCommand("AT+SAPBR=0,1", "OK", 10000);
+        delay(1500);
+        sendCommand("AT+SAPBR=1,1", "OK", 20000);
+        delay(3000);
+        continue;
       }
+      return false;
     }
 
-    if (strstr(responseBuffer, "DOWNLOAD")) break;
-    if (strstr(responseBuffer, "ERROR")) break;
-    delay(5);
-  }
-
-  if (!strstr(responseBuffer, "DOWNLOAD")) {
-    Serial.println(F("HTTPDATA FAIL"));
-    Serial.println(responseBuffer);
+    Serial.println(F("P1"));
     sendCommand("AT+HTTPTERM", "OK", 2000);
-    return false;
-  }
+    delay(300);
 
-  Serial.println(F("P8"));
-  sim808.print(payload);
-
-  if (!sendCommand("", "OK", 10000)) {
-    Serial.println(F("PAYLOAD FAIL"));
-    Serial.println(responseBuffer);
-    sendCommand("AT+HTTPTERM", "OK", 2000);
-    return false;
-  }
-
-  Serial.println(F("P9"));
-  flushSIM();
-  sim808.println(F("AT+HTTPACTION=1"));
-
-  memset(responseBuffer, 0, sizeof(responseBuffer));
-  idx = 0;
-  start = millis();
-
-  while (millis() - start < 30000) {
-    while (sim808.available()) {
-      char c = sim808.read();
-      if (idx < (int)sizeof(responseBuffer) - 1) {
-        responseBuffer[idx++] = c;
-        responseBuffer[idx] = '\0';
+    // HTTPINIT can sporadically fail; retry a few times
+    Serial.println(F("P2"));
+    bool httpInitOk = false;
+    for (int i = 0; i < 3; i++) {
+      if (sendCommand("AT+HTTPINIT", "OK", 8000)) {
+        httpInitOk = true;
+        break;
       }
+      delay(500);
+      sendCommand("AT+HTTPTERM", "OK", 2000);
+      delay(300);
+    }
+    if (!httpInitOk) {
+      Serial.println(F("HTTPINIT FAIL"));
+      Serial.println(responseBuffer);
+      if (attempt == 0) {
+        // Reset bearer and retry whole transaction
+        sendCommand("AT+SAPBR=0,1", "OK", 10000);
+        delay(1500);
+        sendCommand("AT+SAPBR=1,1", "OK", 20000);
+        delay(3000);
+        continue;
+      }
+      return false;
     }
 
-    if (strstr(responseBuffer, "+HTTPACTION: 1,")) break;
-    delay(5);
+    Serial.println(F("P3"));
+    if (!sendCommand("AT+HTTPPARA=\"CID\",1", "OK", 3000)) {
+      Serial.println(F("CID FAIL"));
+      Serial.println(responseBuffer);
+      sendCommand("AT+HTTPTERM", "OK", 2000);
+      if (attempt == 0) continue;
+      return false;
+    }
+
+    Serial.println(F("P5"));
+    const char *urlToUse = TB_URL;
+    // If DNS is broken on this modem/APN, HTTPACTION returns 603.
+    // We can bypass DNS by using the IP-based URL if provided.
+    if (attempt > 0 && TB_URL && TB_URL[0] != '\0') {      urlToUse = TB_URL;
+      Serial.println(F("USING TB_URL_IP (DNS bypass)"));
+    } else if (attempt > 0 && (!TB_URL || TB_URL[0] == '\0')) {
+        Serial.println(F("TIP: set TB_URL_IP to bypass DNS/603"));
+    }
+
+    if (!setURL(urlToUse)) {
+      Serial.println(F("URL FAIL"));
+      Serial.println(responseBuffer);
+      sendCommand("AT+HTTPTERM", "OK", 2000);
+      if (attempt == 0) continue;
+      return false;
+    }
+
+    Serial.println(F("P6"));
+    if (!sendCommand("AT+HTTPPARA=\"CONTENT\",\"application/json\"", "OK", 3000)) {
+      Serial.println(F("CONTENT FAIL"));
+      Serial.println(responseBuffer);
+      sendCommand("AT+HTTPTERM", "OK", 2000);
+      if (attempt == 0) continue;
+      return false;
+    }
+
+    Serial.print(F("JSON: "));
+    Serial.println(payload);
+
+    Serial.println(F("P7"));
+    flushSIM();
+    sim808.print(F("AT+HTTPDATA="));
+    sim808.print(strlen(payload));
+    sim808.println(F(",10000"));
+
+    memset(responseBuffer, 0, sizeof(responseBuffer));
+    int idx = 0;
+    unsigned long start = millis();
+    while (millis() - start < 12000) {
+      while (sim808.available()) {
+        char c = sim808.read();
+        if (idx < (int)sizeof(responseBuffer) - 1) {
+          responseBuffer[idx++] = c;
+          responseBuffer[idx] = '\0';
+        }
+      }
+      if (strstr(responseBuffer, "DOWNLOAD")) break;
+      if (strstr(responseBuffer, "ERROR")) break;
+      delay(5);
+    }
+    if (!strstr(responseBuffer, "DOWNLOAD")) {
+      Serial.println(F("HTTPDATA FAIL"));
+      Serial.println(responseBuffer);
+      sendCommand("AT+HTTPTERM", "OK", 2000);
+      if (attempt == 0) continue;
+      return false;
+    }
+
+    Serial.println(F("P8"));
+    sim808.print(payload);
+    if (!sendCommand("", "OK", 15000)) {
+      Serial.println(F("PAYLOAD FAIL"));
+      Serial.println(responseBuffer);
+      sendCommand("AT+HTTPTERM", "OK", 2000);
+      if (attempt == 0) continue;
+      return false;
+    }
+
+    Serial.println(F("P9"));
+    flushSIM();
+    sim808.println(F("AT+HTTPACTION=1"));
+
+    // Wait longer for full +HTTPACTION line; weak networks can take >30s
+    int actionStatus = 0;
+    long actionLen = 0;
+    if (!waitForHTTPActionLine(90000, &actionStatus, &actionLen)) {
+      Serial.println(F("NO HTTPACTION"));
+      Serial.println(responseBuffer);
+      sendCommand("AT+HTTPTERM", "OK", 2000);
+      // Reset bearer once and retry
+      if (attempt == 0) {
+        sendCommand("AT+SAPBR=0,1", "OK", 10000);
+        delay(1500);
+        sendCommand("AT+SAPBR=1,1", "OK", 20000);
+        delay(3000);
+        continue;
+      }
+      return false;
+    }
+
+    Serial.print(F("HTTPACTION RESP: "));
+    Serial.println(responseBuffer);
+
+    httpCode = actionStatus;
+
+    Serial.print(F("HTTP CODE: "));
+    Serial.println(httpCode);
+
+    Serial.println(F("P10"));
+    sim808.println(F("AT+HTTPREAD"));
+    delay(1000);
+    while (sim808.available()) {
+      Serial.write(sim808.read());
+    }
+
+    sendCommand("AT+HTTPTERM", "OK", 2000);
+
+    if (httpCode == 200 || httpCode == 201) {
+      return true;
+    }
+
+    // On 601/603, reset bearer and retry once.
+    // If DNS is broken (603), the second attempt can use TB_URL_IP if set.
+    if ((httpCode == 601 || httpCode == 603) && attempt == 0) {
+      hardResetBearer();
+      continue;
+    }
+
+    return false;
   }
-
-  Serial.print(F("HTTPACTION RESP: "));
-  Serial.println(responseBuffer);
-
-  if (strstr(responseBuffer, "+HTTPACTION: 1,200")) {
-    httpCode = 200;
-  } else if (strstr(responseBuffer, "+HTTPACTION: 1,201")) {
-    httpCode = 201;
-  } else if (strstr(responseBuffer, "+HTTPACTION: 1,400")) {
-    httpCode = 400;
-  } else if (strstr(responseBuffer, "+HTTPACTION: 1,401")) {
-    httpCode = 401;
-  } else if (strstr(responseBuffer, "+HTTPACTION: 1,404")) {
-    httpCode = 404;
-  } else if (strstr(responseBuffer, "+HTTPACTION: 1,500")) {
-    httpCode = 500;
-  } else {
-    httpCode = 0;
-  }
-
-  Serial.print(F("HTTP CODE: "));
-  Serial.println(httpCode);
-
-  Serial.println(F("P10"));
-  sim808.println(F("AT+HTTPREAD"));
-  delay(1000);
-  while (sim808.available()) {
-    Serial.write(sim808.read());
-  }
-
-  sendCommand("AT+HTTPTERM", "OK", 2000);
-
-  return (httpCode == 200 || httpCode == 201);
+  return false;
 }
+
+bool ensureHTTPBearer() {
+  // Quick check bearer status
+  if (!sendCommand("AT+SAPBR=2,1", "OK", 5000)) {
+    return false;
+  }
+  if (strstr(responseBuffer, "+SAPBR: 1,1")) {
+    return true; // already up
+  }
+
+  // Try reopen
+  if (!sendCommand("AT+SAPBR=1,1", "OK", 15000)) {
+    return false;
+  }
+  delay(3000);
+  return sendCommand("AT+SAPBR=2,1", "OK", 5000) &&
+         strstr(responseBuffer, "+SAPBR: 1,1");
+}
+
 
 // ===================== OFFLINE SMS SUPPORT =====================
 int consecutivePostFails = 0;

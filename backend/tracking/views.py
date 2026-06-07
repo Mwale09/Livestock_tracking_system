@@ -206,29 +206,23 @@ class LocationDataViewSet(viewsets.ReadOnlyModelViewSet):
                 location_data['animal_category'] = device.animal.category
                 location_data['animal_id'] = device.animal.id
 
-                # Geofence status from backend rules: if any active geofence is violated,
-                # mark as 'breach', otherwise 'ok' when geofences exist, or 'unknown'.
-                from .models import Geofence  # local import to avoid circulars on startup
-                geofences = Geofence.objects.filter(animal=device.animal, is_active=True)
+                # Geofence status: breach if outside any active fence; map draws newest fence.
+                geofences = get_active_geofences(device.animal)
                 if geofences.exists():
-                    from .views import calculate_distance
-                    breached = False
-                    for gf in geofences:
-                        d = calculate_distance(
+                    breached = any(
+                        is_outside_geofence(
                             latest_location.latitude,
                             latest_location.longitude,
-                            gf.center_latitude,
-                            gf.center_longitude,
+                            gf,
                         )
-                        if d > float(gf.radius):
-                            breached = True
-                            break
+                        for gf in geofences
+                    )
                     location_data['geofence_status'] = 'breach' if breached else 'ok'
-                    # Expose first geofence circle so frontend can draw it
-                    first = geofences.first()
-                    location_data['geofence_center_lat'] = float(first.center_latitude)
-                    location_data['geofence_center_lng'] = float(first.center_longitude)
-                    location_data['geofence_radius_m'] = float(first.radius)
+                    primary = geofences.first()
+                    location_data['geofence_center_lat'] = float(primary.center_latitude)
+                    location_data['geofence_center_lng'] = float(primary.center_longitude)
+                    location_data['geofence_radius_m'] = float(primary.radius)
+                    location_data['geofence_name'] = primary.name
                 else:
                     location_data['geofence_status'] = 'unknown'
 
@@ -286,28 +280,36 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     return c * r
 
 
+def geofence_distance_meters(latitude, longitude, geofence):
+    """Distance in meters from a point to a geofence center."""
+    return calculate_distance(
+        latitude, longitude,
+        geofence.center_latitude, geofence.center_longitude
+    )
+
+
+def is_outside_geofence(latitude, longitude, geofence):
+    return geofence_distance_meters(latitude, longitude, geofence) > float(geofence.radius)
+
+
+def get_active_geofences(animal):
+    """Newest active geofence first."""
+    return Geofence.objects.filter(animal=animal, is_active=True).order_by('-created_at')
+
+
 def check_geofence_violations(device, latitude, longitude):
     """
-    Check if the current location violates any active geofences for the animal
-    Returns list of violated geofences
+    Check if the current location violates any active geofences for the animal.
+    Returns list of violated geofences.
     """
     violations = []
     try:
         if not hasattr(device, 'animal'):
             return []
         animal = device.animal
-        
-        # Get all active geofences for this animal
-        geofences = Geofence.objects.filter(animal=animal, is_active=True)
-        
-        for geofence in geofences:
-            # Calculate distance from current location to geofence center
-            distance = calculate_distance(
-                latitude, longitude,
-                geofence.center_latitude, geofence.center_longitude
-            )
-            
-            # If distance exceeds radius, it's a violation
+
+        for geofence in get_active_geofences(animal):
+            distance = geofence_distance_meters(latitude, longitude, geofence)
             if distance > float(geofence.radius):
                 violations.append({
                     'geofence': geofence,
@@ -316,18 +318,43 @@ def check_geofence_violations(device, latitude, longitude):
                 })
     except Exception as e:
         print(f"Error checking geofence: {e}")
-    
+
     return violations
 
 
+def is_new_geofence_breach(device, geofence, latitude, longitude):
+    """
+    Alert only when the animal crosses from inside to outside a geofence.
+    Avoids repeating alerts on every location ping while still outside.
+    """
+    if not is_outside_geofence(latitude, longitude, geofence):
+        return False
+
+    previous = device.locations.order_by('-created_at')[1:2].first()
+    if previous is None:
+        return True
+
+    return not is_outside_geofence(previous.latitude, previous.longitude, geofence)
+
+
 def create_geofence_notification(device, geofence, distance):
-    """Create a notification for geofence breach"""
+    """Create a notification for a new geofence breach (with cooldown)."""
     try:
         from notifications.models import Notification
-        
+
         animal = device.animal
         owner = animal.owner
-        
+
+        cooldown = timedelta(minutes=30)
+        recent_alert = Notification.objects.filter(
+            notification_type='geofence_breach',
+            device_id=device.device_id,
+            location_data__geofence_name=geofence.name,
+            created_at__gte=timezone.now() - cooldown,
+        ).exists()
+        if recent_alert:
+            return None
+
         notification = Notification.objects.create(
             user=owner,
             notification_type='geofence_breach',
@@ -396,26 +423,34 @@ def update_location(request):
     """
     data = request.data
     
-    # Get device identifier (device_id or imei)
-    device_id = data.get('device_id')
+    # Get device identifier (device_id, ThingsBoard deviceName, or imei)
+    device_id = (
+        data.get('device_id')
+        or data.get('deviceName')
+        or data.get('device_name')
+    )
     imei = data.get('imei')
     
     if not device_id and not imei:
         return Response(
-            {'error': 'device_id or imei is required'},
+            {'error': 'device_id (or deviceName) or imei is required'},
             status=status.HTTP_400_BAD_REQUEST
         )
     
     # Find the device
     try:
         if device_id:
-            device = GPSDevice.objects.get(device_id=device_id)
+            device = GPSDevice.objects.get(device_id__iexact=str(device_id).strip())
         else:
             device = GPSDevice.objects.get(imei=imei)
     except GPSDevice.DoesNotExist:
         return Response(
-            {'error': 'GPS device not found. Please register the device first.'},
-            status=status.HTTP_404_NOT_FOUND
+            {
+                'error': 'GPS device not found. Register it in Django admin first.',
+                'device_id': device_id,
+                'imei': imei,
+            },
+            status=status.HTTP_400_BAD_REQUEST
         )
     
     # Get location data
@@ -477,32 +512,38 @@ def update_location(request):
     
     device.save()
     
-    # Check geofence violations
+    # Check geofence state (all active fences) vs new breaches (inside -> outside only)
     geofence_violations = check_geofence_violations(device, latitude, longitude)
-    violation_messages = []
-    
+    current_violation_messages = [
+        f"{v['geofence'].name}: {v['distance']:.2f}m outside (radius: {v['radius']}m)"
+        for v in geofence_violations
+    ]
+    new_breach_messages = []
+
     for violation in geofence_violations:
         geofence = violation['geofence']
-        distance = violation['distance']
-        # Create notification for each violation
-        create_geofence_notification(device, geofence, distance)
-        violation_messages.append(
-            f"{geofence.name}: {distance:.2f}m outside (radius: {geofence.radius}m)"
-        )
-    
+        if is_new_geofence_breach(device, geofence, latitude, longitude):
+            create_geofence_notification(device, geofence, violation['distance'])
+            new_breach_messages.append(
+                f"{geofence.name}: {violation['distance']:.2f}m outside (radius: {geofence.radius}m)"
+            )
+
     # Broadcast location update via WebSocket
     broadcast_location_update(device, location_data)
-    
+
     serializer = LocationDataSerializer(location_data)
     response_data = {
         'message': 'Location updated successfully',
         'location': serializer.data,
         'device_status': device.status,
-        'battery_level': device.battery_level
+        'battery_level': device.battery_level,
+        'geofence_status': 'breach' if geofence_violations else 'ok',
     }
-    
-    if violation_messages:
-        response_data['geofence_violations'] = violation_messages
-        response_data['warning'] = 'Geofence breach detected!'
+
+    if current_violation_messages:
+        response_data['geofence_violations'] = current_violation_messages
+    if new_breach_messages:
+        response_data['new_geofence_breaches'] = new_breach_messages
+        response_data['warning'] = 'New geofence breach detected!'
     
     return Response(response_data, status=status.HTTP_201_CREATED)
